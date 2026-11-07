@@ -21,6 +21,8 @@ phone (SMS) ──POST ciphertext──▶ ntfy relay ──GET stream──▶ 
   allowlisted app. Mitigations: the Android app MUST only forward SMS from senders the user allowed, and
   `press_enter` is off by default, so a typed code is never submitted without the user.
 - The key never leaves the two devices. On the desktop it is stored in the OS keyring (Windows Credential Manager).
+  Exception (accepted): `keyring` writes with `CRED_PERSIST_ENTERPRISE`, so a domain roaming profile carries the
+  credential to the user's other Windows sessions.
   Codes are never logged or written to disk.
 - Out of scope: a compromised phone or desktop, and an attacker who can read the pairing QR code. Re-pairing
   creates a new topic and key.

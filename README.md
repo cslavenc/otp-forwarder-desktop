@@ -98,6 +98,9 @@ Other flags: `--sender "+41…"`. A pairing file is the QR JSON: `{"v":1,"relay"
 - Test autostart only with the installed build (a dev build registers its debug path) and turn it off before
   uninstalling — the uninstaller does not remove the autostart entry.
 - After a restart, messages from up to ~2 minutes before the app started can still be delivered.
+- The pairing is a Credential Manager entry with enterprise persistence (set by the `keyring` crate). With a domain
+  roaming profile it follows you to other PCs, and if this app is installed there too it also receives your codes.
+  Only install the app on PCs where you want your codes.
 
 ## Development
 

@@ -18,7 +18,7 @@ Android phone (SMS) ──AES-GCM encrypted──▶ ntfy.sh relay ──▶ thi
 - The **Android companion app** (Kotlin, SMS only) lives in a separate repository. This repo is the **desktop** side.
 - The relay only ever sees ciphertext. The shared key is exchanged once via a QR code shown by the desktop app.
 
-> Status: planning / pre-scaffold. No application code exists yet. Expect to create modules, not edit existing ones.
+> Status: v0.1 implemented (desktop side). Extend existing modules; keep the structure below.
 
 ## Tech & patterns (quick reference)
 
@@ -32,7 +32,8 @@ Android phone (SMS) ──AES-GCM encrypted──▶ ntfy.sh relay ──▶ thi
 | Encryption       | **AES-256-GCM** end-to-end, 32-byte key shared via QR pairing                             |
 | Secret storage   | `keyring` crate → Windows Credential Manager                                              |
 | Windows APIs     | `windows` crate: `SendInput` (Unicode), `GetForegroundWindow`, process image name lookup |
-| Tauri plugins    | tray, notification, clipboard-manager, global-shortcut, autostart, single-instance       |
+| Tauri plugins    | notification, global-shortcut, autostart, single-instance (all used from Rust only); tray via core |
+| Clipboard        | `arboard` (excluded from clipboard history and cloud sync)                               |
 | Package manager  | npm                                                                                       |
 | Not in scope     | LAN-direct delivery, notification-based OTPs, macOS, Linux (for now)                     |
 
@@ -107,12 +108,12 @@ implementations:
    start implementing the next user story already, since no changes to the business logic are expected at that point.
 8. Once a user story is fully implemented, create a short and precise commit (see git log for examples) and push it
 
-## Repository shape (planned)
+## Repository shape
 
 ```
 otp-forwarder-desktop/
 ├── src/                       Svelte 5 + TS frontend (Vite root)
-│   ├── lib/                   components, stores, typed IPC wrappers (invoke/listen)
+│   ├── lib/                   ipc.ts (typed invoke/listen wrappers), Recent/Pairing/Settings.svelte
 │   ├── App.svelte
 │   └── main.ts
 ├── src-tauri/                 Rust backend (Tauri v2)
@@ -120,29 +121,34 @@ otp-forwarder-desktop/
 │   │   ├── main.rs            entry point → lib::run()
 │   │   ├── lib.rs             Tauri builder: plugins, tray, state, commands
 │   │   ├── commands.rs        #[tauri::command] IPC layer (thin)
-│   │   ├── relay/             ntfy subscription (JSON stream), reconnect/backoff
-│   │   ├── crypto/            AES-256-GCM encrypt/decrypt, key generation
-│   │   ├── pairing/           QR payload creation, key persistence via keyring
-│   │   ├── otp/               message model, validation, dedupe, expiry
-│   │   ├── rules/             foreground-app allowlist + per-app actions (Enter, delay)
-│   │   └── platform/          traits + windows/ impl (SendInput, foreground window, autostart)
+│   │   ├── pipeline.rs        AppState, relay → receive → deliver, recent list, clipboard clear
+│   │   ├── relay.rs           ntfy subscription (JSON stream), reconnect/backoff, publish
+│   │   ├── crypto.rs          AES-256-GCM encrypt/decrypt, key/topic generation
+│   │   ├── pairing.rs         pairing JSON/QR, key persistence via keyring
+│   │   ├── otp.rs             message model, validation, freshness, dedupe
+│   │   ├── settings.rs        settings.json load/validate/atomic save
+│   │   ├── rules.rs           foreground-app allowlist + per-app actions (Enter, delay)
+│   │   └── platform/          trait (mod.rs) + windows.rs (SendInput, foreground window, clipboard)
+│   ├── examples/otpfwd-send.rs  test sender CLI (phone stand-in; never bundled)
+│   ├── build.rs               embeds the app manifest into all targets (tauri#13419) + command allowlist
 │   ├── capabilities/          Tauri permission sets
 │   ├── icons/
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── docs/                      architecture notes, wire contract
+├── docs/wire-contract.md      wire contract v1 + threat model (authoritative)
 ├── .claude/agents/            subagent definitions
 ├── package.json
 └── vite.config.ts
 ```
 
-## Commands (once scaffolded)
+## Commands
 
 | Task                    | Command                                                         |
 |-------------------------|-----------------------------------------------------------------|
 | Install JS deps         | `npm install`                                                   |
 | Run app (dev)           | `npm run tauri dev`                                             |
-| Build installer         | `npm run tauri build` (NSIS/MSI, bootstraps WebView2 on Win 10) |
+| Build installer         | `npm run tauri build` (NSIS, bootstraps WebView2 on Win 10)     |
+| Test sender CLI         | `cargo run --manifest-path src-tauri/Cargo.toml --example otpfwd-send -- --code 123456` |
 | Frontend type-check     | `npm run check` (svelte-check)                                  |
 | Rust tests              | `cargo test --manifest-path src-tauri/Cargo.toml`               |
 | Rust lint (must pass)   | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` |
@@ -170,8 +176,9 @@ This keeps the git log readable and uniform when many agents touch the repo.
 
 ## Backend (`src-tauri/`)
 
-- Rust 2021 edition, stable toolchain. `rustfmt` default style; `clippy -D warnings` must pass.
+- Rust 2024 edition, stable toolchain. `rustfmt` default style; `clippy -D warnings` must pass.
 - Async runtime: Tokio (Tauri's runtime). HTTP client: `reqwest` (rustls) for the ntfy stream.
+- If test binaries fail with `STATUS_ENTRYPOINT_NOT_FOUND`, the build cache is stale: `cargo clean -p otp-forwarder-desktop`.
 - Errors: `thiserror` for module error types; map to serializable error strings only at the command layer. No
   `unwrap()`/`expect()` outside tests and provably infallible startup code.
 - `unsafe` only inside `platform::windows`, minimal and each block with a `// SAFETY:` comment.
@@ -199,15 +206,15 @@ This keeps the git log readable and uniform when many agents touch the repo.
 
 ## Cross-cutting contract (desktop ↔ Android)
 
-Draft wire contract (version 1). Finalize with **senior-architect** before implementing; any change must be mirrored in
-the Android repo and bump `v`.
+Wire contract version 1 — the authoritative spec is [`docs/wire-contract.md`](docs/wire-contract.md) (limits, test
+vector, threat model). Any change goes through **senior-architect**, must be mirrored in the Android repo and bump `v`.
 
 - **Pairing QR payload** (JSON, shown by desktop, scanned by phone):
   `{ "v": 1, "relay": "https://ntfy.sh", "topic": "<random 128-bit, base64url>", "key": "<32 bytes, base64url>" }`
 - **Message** (published by phone to `POST {relay}/{topic}`): body is `base64url(nonce[12] || ciphertext || tag)`,
   AES-256-GCM, AAD = `"otpfwd/v1/" + topic`.
-- **Plaintext** (JSON): `{ "v": 1, "id": "<uuid>", "code": "123456", "sender": "+41…", "ts": <unix ms> }`
+- **Plaintext** (JSON): `{ "v": 1, "id": "<16–64 [A-Za-z0-9_-]>", "code": "<4–10 alphanumerics>", "sender": "+41…", "ts": <unix ms> }`
 - Desktop subscribes via `GET {relay}/{topic}/json` (streaming). It rejects messages that fail decryption, have an
-  unknown `v`, are older than the freshness window (e.g. 2 minutes), or reuse a seen `id`.
+  unknown `v`, are older than 2 minutes (or > 30 s in the future), or reuse an `id` seen in the last 10 minutes.
 - The topic name is a secret-ish identifier, not a security boundary; confidentiality and authenticity come from
   AES-GCM.

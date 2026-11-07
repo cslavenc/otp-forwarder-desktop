@@ -16,7 +16,13 @@ pub fn decide(settings: &Settings, foreground_exe: Option<&str>) -> Option<Actio
     if !settings.auto_type {
         return None;
     }
-    let exe = foreground_exe?.to_lowercase();
+    find_rule(settings, foreground_exe?)
+}
+
+/// The matching rule's action regardless of `auto_type` (for the explicit "type last code"
+/// hotkey).
+pub fn find_rule(settings: &Settings, foreground_exe: &str) -> Option<Action> {
+    let exe = foreground_exe.to_lowercase();
     settings
         .rules
         .iter()
@@ -81,6 +87,8 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(decide(&s, Some("wfica32.exe")), None);
+        assert!(find_rule(&s, "WFICA32.exe").is_some());
+        assert_eq!(find_rule(&s, "chrome.exe"), None);
     }
 
     #[test]

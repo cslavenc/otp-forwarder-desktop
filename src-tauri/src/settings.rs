@@ -111,17 +111,16 @@ impl Settings {
         Ok(())
     }
 
-    /// Missing file → defaults. Unreadable as valid settings → moved to `<path>.bak`, defaults.
-    pub fn load(path: &Path) -> Self {
+    /// Missing file → defaults. Invalid content → moved to `<path>.bak`, defaults.
+    /// Read errors (e.g. file locked) are returned so the caller does not later overwrite the
+    /// user's file with defaults.
+    pub fn load(path: &Path) -> Result<Self, SettingsError> {
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Self::default(),
-            Err(e) => {
-                debug_warn(&format!("cannot read settings, using defaults: {e}"));
-                return Self::default();
-            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(e) => return Err(e.into()),
         };
-        match Self::parse(&bytes) {
+        Ok(match Self::parse(&bytes) {
             Ok(settings) => settings,
             Err(e) => {
                 debug_warn(&format!("settings corrupt, moving to .bak: {e}"));
@@ -130,10 +129,11 @@ impl Settings {
                 }
                 Self::default()
             }
-        }
+        })
     }
 
-    /// Validates, then writes atomically (temp file + rename).
+    /// Validates, then writes atomically (temp file + rename). Callers serialize saves (settings
+    /// mutex) because the temp file name is fixed.
     pub fn save(&self, path: &Path) -> Result<(), SettingsError> {
         self.validate()?;
         let json = serde_json::to_vec_pretty(self)?;
@@ -276,9 +276,17 @@ mod tests {
     fn load_missing_file_gives_defaults() {
         let dir = temp_dir("missing");
         assert_eq!(
-            Settings::load(&dir.join("settings.json")),
+            Settings::load(&dir.join("settings.json")).unwrap(),
             Settings::default()
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_returns_read_errors_instead_of_defaults() {
+        let dir = temp_dir("unreadable");
+        // Reading a directory fails with an error other than NotFound.
+        assert!(matches!(Settings::load(&dir), Err(SettingsError::Io(_))));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -295,12 +303,12 @@ mod tests {
         s.rules.push(Rule::for_exe("chrome.exe"));
 
         s.save(&path).unwrap();
-        assert_eq!(Settings::load(&path), s);
+        assert_eq!(Settings::load(&path).unwrap(), s);
         assert!(!with_suffix(&path, ".tmp").exists());
 
         s.notifications = false;
         s.save(&path).unwrap();
-        assert_eq!(Settings::load(&path), s);
+        assert_eq!(Settings::load(&path).unwrap(), s);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -313,7 +321,7 @@ mod tests {
             r#"{"auto_type":false,"rules":[{"exe":"x.exe"}],"future":1}"#,
         )
         .unwrap();
-        let s = Settings::load(&path);
+        let s = Settings::load(&path).unwrap();
         assert!(!s.auto_type);
         assert_eq!(s.rules, vec![Rule::for_exe("x.exe")]);
         assert_eq!(s.clipboard_clear_secs, DEFAULT_CLIPBOARD_CLEAR_SECS);
@@ -333,7 +341,7 @@ mod tests {
             let dir = temp_dir(&format!("corrupt-{i}"));
             let path = dir.join("settings.json");
             fs::write(&path, content).unwrap();
-            assert_eq!(Settings::load(&path), Settings::default());
+            assert_eq!(Settings::load(&path).unwrap(), Settings::default());
             assert!(!path.exists());
             assert_eq!(fs::read(with_suffix(&path, ".bak")).unwrap(), content);
             let _ = fs::remove_dir_all(&dir);

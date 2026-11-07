@@ -2,7 +2,7 @@
 //! Codes are never logged; toasts carry neither the code nor the sender.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -359,6 +359,13 @@ pub fn on_hotkey(app: &AppHandle) {
     let app = app.clone();
     async_runtime::spawn(async move {
         let state = app.state::<AppState>();
+        // Pressing the hotkey aborts an in-flight auto-type (modifiers held); retyping the full
+        // code into the half-filled field would leave a doubled code, so refuse instead.
+        if matches!(state.typing.try_lock(), Err(TryLockError::WouldBlock)) {
+            let notify = state.lock().settings.notifications;
+            toast(&app, notify, "A code is being typed; try again");
+            return;
+        }
         let (code, notify) = {
             let mut inner = state.lock();
             (inner.recent.latest(now_ms()), inner.settings.notifications)

@@ -366,6 +366,10 @@ mod tests {
         );
         assert_eq!(lines.push(b":3}\n"), [b"{\"c\":3}".to_vec()]);
         assert_eq!(lines.push(b"\n"), [Vec::<u8>::new()]);
+        // A multi-byte UTF-8 char split across chunks is reassembled intact.
+        let euro = "€".as_bytes();
+        assert!(lines.push(&euro[..1]).is_empty());
+        assert_eq!(lines.push(&[&euro[1..], b"\n"].concat()), [euro.to_vec()]);
     }
 
     #[test]
@@ -435,6 +439,11 @@ mod tests {
         );
         assert!(handle_line(b"not json", &mut max_time).is_none());
         assert_eq!(max_time, Some(60));
+
+        // A message without a body (attachment) is not delivered, but still advances.
+        let attachment = handle_line(br#"{"id":"a","time":70,"event":"message"}"#, &mut max_time);
+        assert!(attachment.is_none());
+        assert_eq!(max_time, Some(70));
     }
 
     #[test]

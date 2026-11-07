@@ -2,6 +2,7 @@ pub mod crypto;
 pub mod otp;
 pub mod pairing;
 pub mod platform;
+pub mod relay;
 pub mod rules;
 pub mod settings;
 

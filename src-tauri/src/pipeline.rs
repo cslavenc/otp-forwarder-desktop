@@ -55,6 +55,9 @@ pub struct AppState {
     inner: Mutex<Inner>,
     /// Serializes typing so two deliveries never interleave keystrokes.
     typing: Mutex<()>,
+    /// Serializes clipboard writes with arming/running their clear, so clears follow write
+    /// order. Taken before `inner`.
+    clipboard: tokio::sync::Mutex<()>,
 }
 
 pub(crate) struct Inner {
@@ -66,9 +69,7 @@ pub(crate) struct Inner {
     pub(crate) relay: Option<RelayStatus>,
     pub(crate) recent: RecentCodes,
     dedupe: Dedupe,
-    /// Code awaiting its clipboard clear; `clear_seq` lets only the newest timer clear.
-    pending_clear: Option<Zeroizing<String>>,
-    clear_seq: u64,
+    clipboard_clear: ClipboardClear,
     relay_task: Option<JoinHandle<()>>,
 }
 
@@ -94,11 +95,11 @@ impl AppState {
                 relay: None,
                 recent: RecentCodes::default(),
                 dedupe: Dedupe::default(),
-                pending_clear: None,
-                clear_seq: 0,
+                clipboard_clear: ClipboardClear::default(),
                 relay_task: None,
             }),
             typing: Mutex::new(()),
+            clipboard: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -106,6 +107,38 @@ impl AppState {
     pub(crate) fn lock(&self) -> MutexGuard<'_, Inner> {
         // The state stays consistent even if a holder panicked; keep serving it.
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The code awaiting its clipboard clear; only the newest armed timer may clear it.
+#[derive(Default)]
+struct ClipboardClear {
+    seq: u64,
+    pending: Option<Zeroizing<String>>,
+}
+
+impl ClipboardClear {
+    fn arm(&mut self, code: Zeroizing<String>) -> u64 {
+        self.seq += 1;
+        self.pending = Some(code);
+        self.seq
+    }
+
+    /// The pending code if timer `seq` is still the newest.
+    fn due(&self, seq: u64) -> Option<Zeroizing<String>> {
+        self.pending.clone().filter(|_| self.seq == seq)
+    }
+
+    fn take_if(&mut self, seq: u64) -> Option<Zeroizing<String>> {
+        if self.seq == seq {
+            self.pending.take()
+        } else {
+            None
+        }
+    }
+
+    fn take(&mut self) -> Option<Zeroizing<String>> {
+        self.pending.take()
     }
 }
 
@@ -433,6 +466,8 @@ async fn type_code(
 
 /// Copies `code` (excluded from clipboard history) and schedules its clear.
 pub(crate) async fn copy_secret(app: &AppHandle, code: Zeroizing<String>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let _clipboard = state.clipboard.lock().await;
     let handle = app.clone();
     let copied = code.clone();
     async_runtime::spawn_blocking(move || handle.state::<AppState>().platform.copy_secret(&copied))
@@ -441,38 +476,36 @@ pub(crate) async fn copy_secret(app: &AppHandle, code: Zeroizing<String>) -> Res
         .map_err(|e| e.to_string())?;
 
     let (secs, seq) = {
-        let state = app.state::<AppState>();
         let mut inner = state.lock();
         let secs = inner.settings.clipboard_clear_secs;
         if secs == 0 {
             return Ok(());
         }
-        inner.clear_seq += 1;
-        inner.pending_clear = Some(code);
-        (secs, inner.clear_seq)
+        (secs, inner.clipboard_clear.arm(code))
     };
     let app = app.clone();
     async_runtime::spawn(async move {
         sleep(Duration::from_secs(secs.into())).await;
-        let due = {
-            let state = app.state::<AppState>();
-            let mut inner = state.lock();
-            if inner.clear_seq == seq {
-                inner.pending_clear.take()
-            } else {
-                None
-            }
+        let state = app.state::<AppState>();
+        let _clipboard = state.clipboard.lock().await;
+        let Some(code) = state.lock().clipboard_clear.due(seq) else {
+            return;
         };
-        if let Some(code) = due {
-            let _ = async_runtime::spawn_blocking(move || clear_clipboard(&app, &code)).await;
-        }
+        // Clear before dropping `pending`, so a quit meanwhile still finds (and clears) it.
+        let handle = app.clone();
+        let _ = async_runtime::spawn_blocking(move || clear_clipboard(&handle, &code)).await;
+        state.lock().clipboard_clear.take_if(seq);
     });
     Ok(())
 }
 
-/// Runs a pending clipboard clear now (on quit).
+/// Runs a pending clipboard clear now (on exit). Clearing is idempotent, so racing a timer
+/// is harmless.
 pub fn clear_clipboard_now(app: &AppHandle) {
-    let pending = app.state::<AppState>().lock().pending_clear.take();
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let pending = state.lock().clipboard_clear.take();
     if let Some(code) = pending {
         clear_clipboard(app, &code);
     }
@@ -703,6 +736,30 @@ mod tests {
         for bad in ["Ctrl+Alt+", "O+Ctrl", "Ctrl+Nope", "Ctrl+A+B"] {
             assert!(parse_hotkey(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn newest_clipboard_clear_wins() {
+        let mut clear = ClipboardClear::default();
+        let first = clear.arm(code("1111"));
+        let second = clear.arm(code("2222"));
+        assert!(clear.due(first).is_none());
+        assert!(clear.take_if(first).is_none());
+        assert_eq!(clear.due(second).unwrap().as_str(), "2222");
+        // `due` leaves it pending until the clear has run.
+        assert_eq!(clear.due(second).unwrap().as_str(), "2222");
+        assert_eq!(clear.take_if(second).unwrap().as_str(), "2222");
+        assert!(clear.due(second).is_none());
+    }
+
+    #[test]
+    fn exit_takes_the_pending_clear() {
+        let mut clear = ClipboardClear::default();
+        assert!(clear.take().is_none());
+        let seq = clear.arm(code("1111"));
+        assert_eq!(clear.take().unwrap().as_str(), "1111");
+        assert!(clear.due(seq).is_none());
+        assert!(clear.take_if(seq).is_none());
     }
 
     #[test]

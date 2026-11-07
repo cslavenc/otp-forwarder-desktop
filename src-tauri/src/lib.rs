@@ -1,5 +1,6 @@
 pub mod crypto;
 pub mod otp;
+pub mod pairing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

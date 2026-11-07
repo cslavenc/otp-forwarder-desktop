@@ -1,6 +1,7 @@
 pub mod crypto;
 pub mod otp;
 pub mod pairing;
+pub mod rules;
 pub mod settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -520,10 +520,11 @@ pub fn swap_hotkey(
     old: Option<Shortcut>,
     new: Option<Shortcut>,
 ) -> Result<(), String> {
-    if old == new {
+    let shortcuts = app.global_shortcut();
+    // An unchanged hotkey whose earlier registration failed is retried, not skipped.
+    if old == new && new.is_none_or(|s| shortcuts.is_registered(s)) {
         return Ok(());
     }
-    let shortcuts = app.global_shortcut();
     if let Some(old) = old {
         let _ = shortcuts.unregister(old);
     }

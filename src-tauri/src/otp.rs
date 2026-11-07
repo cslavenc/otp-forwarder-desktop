@@ -98,6 +98,11 @@ pub fn receive(
     Ok(msg)
 }
 
+/// New message id: base64url of 16 random bytes.
+pub fn new_id() -> Result<String, CryptoError> {
+    crypto::generate_topic()
+}
+
 fn parse(plaintext: &[u8]) -> Result<OtpMessage, Reject> {
     if plaintext.len() > MAX_PLAINTEXT_BYTES {
         return Err(Reject::TooLarge);
@@ -124,7 +129,7 @@ impl OtpMessage {
 }
 
 /// `^[A-Za-z0-9]{4,10}$`
-fn is_valid_code(code: &str) -> bool {
+pub fn is_valid_code(code: &str) -> bool {
     (CODE_MIN_LEN..=CODE_MAX_LEN).contains(&code.len())
         && code.bytes().all(|b| b.is_ascii_alphanumeric())
 }

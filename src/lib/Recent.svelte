@@ -58,12 +58,18 @@
     if (id && !visible.some((r) => r.id === id)) revealed = null;
   });
 
+  function hide() {
+    clearTimeout(maskTimer);
+    revealed = null;
+  }
+
   async function reveal(id: string) {
+    if (revealed?.id === id) return hide();
     error = "";
     try {
       revealed = { id, code: await revealCode(id) };
       clearTimeout(maskTimer);
-      maskTimer = setTimeout(() => (revealed = null), REVEAL_MS);
+      maskTimer = setTimeout(hide, REVEAL_MS);
     } catch (e) {
       error = errorText(e);
     }
@@ -149,12 +155,26 @@
 {:else}
   <ul>
     {#each visible as r (r.id)}
+      {@const shown = revealed?.id === r.id}
+      {@const from = r.sender || "unknown sender"}
       <li>
         <div class="row">
-          <code>{revealed?.id === r.id ? revealed.code : r.masked}</code>
+          {#if revealed?.id === r.id}
+            <code>{revealed.code}</code>
+          {:else}
+            <code aria-label="hidden code">{r.masked}</code>
+          {/if}
           <span class="actions">
-            <button type="button" class="outline" onclick={() => reveal(r.id)}>Reveal</button>
-            <button type="button" class="outline" onclick={() => copy(r.id)}>Copy</button>
+            <button
+              type="button"
+              class="outline"
+              aria-pressed={shown}
+              aria-label={`${shown ? "Hide" : "Reveal"} code from ${from}`}
+              onclick={() => reveal(r.id)}>{shown ? "Hide" : "Reveal"}</button
+            >
+            <button type="button" class="outline" aria-label={`Copy code from ${from}`} onclick={() => copy(r.id)}
+              >Copy</button
+            >
           </span>
         </div>
         <small>{r.sender || "Unknown sender"} · {age(r.received_ms)} · {outcome(r.delivery)}</small>

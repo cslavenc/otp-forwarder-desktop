@@ -22,6 +22,82 @@ Android phone (SMS) ──AES-GCM encrypted──▶ ntfy.sh relay ──▶ OTP
 Works whether the phone is on the same Wi-Fi or on mobile data — the desktop only makes outbound connections, so no
 ports or firewall rules are needed. The exact wire format is in [`docs/wire-contract.md`](docs/wire-contract.md).
 
+### Pairing
+
+Pairing is a one-time exchange of a shared secret; there is no account or server-side registration.
+
+- On first start the app generates a random **topic** (128 bits) and a random **key** (256 bits) and stores both in
+  Windows Credential Manager.
+- The QR code is just this JSON: `{"v":1,"relay":"https://ntfy.sh","topic":"…","key":"…"}`. It is only rendered
+  when you click **Show QR code**, and it is discarded when you switch tabs or close the window, because it contains
+  the key.
+- The topic is the ntfy "channel" both sides use. It is hard to guess but not a security boundary: whoever knows the
+  topic can read ciphertext or post junk, but cannot decrypt or forge a code without the key.
+- **Re-pair** throws both away and creates new ones; old phones stop working until they scan again.
+
+### What happens to one code
+
+```
+phone                                   ntfy.sh                    desktop (tray app)
+─────                                   ───────                    ──────────────────
+SMS "Your code is 482913"
+ └ extract code
+ └ JSON {v,id,code,sender,ts}
+ └ AES-256-GCM encrypt (random nonce)
+ └ POST https://ntfy.sh/<topic> ───────▶ stores & fans out ───────▶ GET /<topic>/json (long-lived stream)
+                                                                    1. decrypt + authenticate
+                                                                    2. validate
+                                                                    3. decide: type or copy
+                                                                    4. deliver, notify, update UI
+```
+
+1. **Decrypt and authenticate.** The body is `base64url(nonce ‖ ciphertext ‖ tag)`. The topic is bound into the
+   authentication data, so a message copied to another topic fails. Anything that does not decrypt is dropped.
+2. **Validate** (in this order, see [`otp.rs`](src-tauri/src/otp.rs)):
+   - known protocol version (`v: 1`);
+   - the code is 4–10 letters/digits;
+   - the phone's timestamp is at most **2 minutes** old and at most 30 s in the future (keep both clocks on
+     automatic time);
+   - the message `id` was not seen in the last 10 minutes (replay protection).
+
+   Rejected messages appear as a notice in the **Codes** tab; their content is never shown.
+3. **Decide** what to do based on the **focused window** at that moment:
+
+   | Focused window                                         | Result                                    |
+   |--------------------------------------------------------|-------------------------------------------|
+   | Its exe is on the allowlist and the rule is enabled    | **Typed in** (then Enter, if configured)  |
+   | Not on the allowlist, or *Auto-type* is off            | Clipboard + notification                  |
+   | Runs as administrator                                  | Clipboard (Windows blocks typing into it) |
+   | OTP Forwarder itself, or nothing focused               | Clipboard                                 |
+
+   Matching is by process file name only (e.g. `wfica32.exe`), case-insensitive.
+4. **Deliver.**
+   - **Typing** uses Windows `SendInput`, one character at a time with the rule's delay (default 15 ms). Before every
+     keystroke it re-checks that the same window still has focus and that you are not holding Shift/Ctrl/Alt/Win.
+     If either check fails it stops, never presses Enter, and falls back to the clipboard. Digits are sent as real
+     key presses, which remote sessions like Citrix handle best.
+   - **Clipboard** fallback copies the code and clears it again after 30 s (configurable), or immediately when you
+     quit, but only if the clipboard still holds that code.
+   - The code is added to **Codes** (masked, kept in memory for 5 minutes) and a notification says what happened.
+     Notifications never contain the code.
+
+**Missed it?** Focus the right field and press **Ctrl+Alt+Shift+O** to type the latest code. This works in any
+non-admin app, not just allowlisted ones, because you asked for it explicitly. Or use **Copy** in the Codes tab.
+
+### Staying connected
+
+The app keeps one streaming HTTPS connection to ntfy.sh open. If it drops (Wi-Fi change, sleep/resume, ntfy restart)
+it reconnects with backoff (1 s doubling up to 60 s) and asks ntfy for messages since shortly before the last one it
+saw, so nothing sent during a short outage is lost; repeats are filtered by the replay check. The badge in the window
+and the tray tooltip show **Connected**, **Connecting** or **Reconnecting in N s: reason**.
+
+### Finding an app's exe name for the allowlist
+
+Open the app, then **Task Manager → Details**, and find the row that uses CPU when you interact with it; the
+*Name* column is what goes into **Settings**. For Citrix, the session window is usually `wfica32.exe`
+(`CDViewer.exe` for some desktop viewers) and the Workspace login window is `SelfService.exe`. For a browser it would be
+`chrome.exe`, `msedge.exe`, etc. Note that allowlisting a browser means codes are typed into *any* focused page.
+
 ## Features
 
 - QR-code pairing, end-to-end AES-256-GCM encryption (the relay only sees ciphertext); key in Windows Credential Manager
@@ -97,7 +173,8 @@ Other flags: `--sender "+41…"`. A pairing file is the QR JSON: `{"v":1,"relay"
 - Letters are typed as Unicode keystrokes (digits as real keys). If a remote session drops letters, use the clipboard.
 - Test autostart only with the installed build (a dev build registers its debug path) and turn it off before
   uninstalling — the uninstaller does not remove the autostart entry.
-- After a restart, messages from up to ~2 minutes before the app started can still be delivered.
+- The replay list lives in memory: right after the app restarts, a captured message that is still under 2 minutes old
+  could be delivered once more.
 - The pairing is a Credential Manager entry with enterprise persistence (set by the `keyring` crate). With a domain
   roaming profile it follows you to other PCs, and if this app is installed there too it also receives your codes.
   Only install the app on PCs where you want your codes.
@@ -120,6 +197,22 @@ npm run check           # frontend type-check
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
+
+Code map (all security-relevant logic is in Rust; the Svelte UI only displays and edits settings):
+
+| Path                                 | Responsibility                                                              |
+|--------------------------------------|-----------------------------------------------------------------------------|
+| `src-tauri/src/crypto.rs`            | AES-256-GCM seal/open, key and topic generation                             |
+| `src-tauri/src/pairing.rs`           | Pairing JSON, QR rendering, Credential Manager storage                      |
+| `src-tauri/src/relay.rs`             | ntfy subscribe stream, reconnect/backoff, publish (test code)               |
+| `src-tauri/src/otp.rs`               | Plaintext parsing and validation: version, code, freshness, replay          |
+| `src-tauri/src/rules.rs`             | Allowlist matching → type or copy                                           |
+| `src-tauri/src/settings.rs`          | `settings.json` load/validate/save                                          |
+| `src-tauri/src/platform/`            | OS boundary: typing (`SendInput`), focused window, clipboard (Windows impl) |
+| `src-tauri/src/pipeline.rs`          | Glues it together: relay → decrypt → validate → deliver → events/toasts     |
+| `src-tauri/src/commands.rs`, `lib.rs`| Thin Tauri commands; app setup, tray, hotkey, autostart                     |
+| `src-tauri/examples/otpfwd-send.rs`  | Test sender that plays the phone's role                                     |
+| `src/`                               | Svelte 5 UI: `Recent`, `Pairing`, `Settings`; typed IPC in `src/lib/ipc.ts` |
 
 ## Roadmap
 

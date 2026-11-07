@@ -11,6 +11,8 @@ use tokio::time::{sleep, timeout};
 use url::Url;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Until the subscribe response headers arrive.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const PUBLISH_TIMEOUT: Duration = Duration::from_secs(15);
 /// Wake-up interval while waiting for stream data, to run the dead-stream check.
 const CHUNK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -50,6 +52,8 @@ pub enum RelayError {
     Status(StatusCode),
     #[error("relay closed the connection")]
     Closed,
+    #[error("relay did not answer within {} s", REQUEST_TIMEOUT.as_secs())]
+    RequestTimeout,
     #[error("no data from relay for {} s", DEAD_AFTER.as_secs())]
     Dead,
     #[error("relay URL cannot take a path")]
@@ -151,7 +155,11 @@ async fn stream(
     max_time: &mut Option<i64>,
     connected_at: &mut Option<Instant>,
 ) -> Result<Infallible, RelayError> {
-    let mut response = http.get(subscribe_url(relay, topic, since)?).send().await?;
+    let request = http.get(subscribe_url(relay, topic, since)?).send();
+    // connect_timeout doesn't cover a relay that accepts the connection but never answers.
+    let mut response = timeout(REQUEST_TIMEOUT, request)
+        .await
+        .map_err(|_| RelayError::RequestTimeout)??;
     if !response.status().is_success() {
         return Err(RelayError::Status(response.status()));
     }
@@ -163,7 +171,10 @@ async fn stream(
             let chunk = chunk?.ok_or(RelayError::Closed)?;
             for line in lines.push(&chunk) {
                 last_line = SystemTime::now();
-                handle_line(&line, tx, max_time).await;
+                if let Some(event) = handle_line(&line, max_time) {
+                    // Send errors mean the receiver is gone; `subscribe` then stops.
+                    let _ = tx.send(event).await;
+                }
             }
         }
         let now = SystemTime::now();
@@ -176,20 +187,21 @@ async fn stream(
     }
 }
 
-async fn handle_line(line: &[u8], tx: &mpsc::Sender<RelayEvent>, max_time: &mut Option<i64>) {
-    let Some(event) = parse_line(line) else {
-        return;
-    };
-    *max_time = Some(max_time.map_or(event.time, |t| t.max(event.time)));
-    let relay_event = match (event.event.as_str(), event.message) {
-        ("open", _) => RelayEvent::Status(RelayStatus::Connected),
-        ("message", Some(body)) => RelayEvent::Message {
+/// Only `message`/`keepalive` times advance `max_time`: `open` carries the current server time,
+/// which would skip messages missed while disconnected.
+fn handle_line(line: &[u8], max_time: &mut Option<i64>) -> Option<RelayEvent> {
+    let event = parse_line(line)?;
+    if matches!(event.event.as_str(), "message" | "keepalive") {
+        *max_time = Some(max_time.map_or(event.time, |t| t.max(event.time)));
+    }
+    match (event.event.as_str(), event.message) {
+        ("open", _) => Some(RelayEvent::Status(RelayStatus::Connected)),
+        ("message", Some(body)) => Some(RelayEvent::Message {
             body,
             time: event.time,
-        },
-        _ => return,
-    };
-    let _ = tx.send(relay_event).await;
+        }),
+        _ => None,
+    }
 }
 
 fn parse_line(line: &[u8]) -> Option<NtfyEvent> {
@@ -388,6 +400,41 @@ mod tests {
         assert!(parse_line(b"").is_none());
         assert!(parse_line(b"not json").is_none());
         assert!(parse_line(br#"{"event":"message","message":"no time"}"#).is_none());
+    }
+
+    #[test]
+    fn only_message_and_keepalive_advance_the_since_time() {
+        let mut max_time = None;
+        let open = handle_line(br#"{"id":"o","time":100,"event":"open"}"#, &mut max_time);
+        assert!(matches!(
+            open,
+            Some(RelayEvent::Status(RelayStatus::Connected))
+        ));
+        assert_eq!(max_time, None);
+
+        let message = handle_line(
+            br#"{"id":"m","time":50,"event":"message","message":"body"}"#,
+            &mut max_time,
+        );
+        assert!(
+            matches!(message, Some(RelayEvent::Message { ref body, time: 50 }) if body == "body")
+        );
+        assert_eq!(max_time, Some(50));
+
+        let keepalive = handle_line(
+            br#"{"id":"k","time":60,"event":"keepalive"}"#,
+            &mut max_time,
+        );
+        assert!(keepalive.is_none());
+        assert_eq!(max_time, Some(60));
+
+        // Older times never move it back; garbage changes nothing.
+        handle_line(
+            br#"{"id":"k","time":10,"event":"keepalive"}"#,
+            &mut max_time,
+        );
+        assert!(handle_line(b"not json", &mut max_time).is_none());
+        assert_eq!(max_time, Some(60));
     }
 
     #[test]

@@ -27,6 +27,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures 0.2.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -1244,6 +1245,7 @@ checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
 dependencies = [
  "opaque-debug",
  "polyval",
+ "zeroize",
 ]
 
 [[package]]
@@ -2446,10 +2448,12 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 name = "otp-forwarder-desktop"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "aes-gcm",
  "arboard",
  "base64 0.23.1",
  "getrandom 0.4.3",
+ "ghash",
  "keyring",
  "qrcode",
  "reqwest",

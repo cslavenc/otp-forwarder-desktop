@@ -98,7 +98,11 @@ impl Pairing {
             topic: &self.topic,
             key: &key,
         };
-        serde_json::to_string(&wire)
+        // Pre-sized so the buffer never reallocates and leaves unwiped key copies behind.
+        let mut buf = Zeroizing::new(Vec::with_capacity(1024));
+        serde_json::to_writer(&mut *buf, &wire)
+            .map_err(|_| PairingError::Invalid("could not serialize pairing"))?;
+        String::from_utf8(std::mem::take(&mut *buf))
             .map(Zeroizing::new)
             .map_err(|_| PairingError::Invalid("could not serialize pairing"))
     }
@@ -298,6 +302,30 @@ mod tests {
         let svg = pairing.qr_svg().unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("</svg>"));
+    }
+
+    #[test]
+    fn load_only_treats_missing_entry_as_unpaired() {
+        use keyring::mock::MockCredential;
+        let entry = keyring::Entry::new_with_credential(Box::new(MockCredential::default()));
+        assert!(Pairing::load_from(&entry).unwrap().is_none());
+
+        let mock: &MockCredential = entry.get_credential().downcast_ref().unwrap();
+        mock.set_error(keyring::Error::PlatformFailure("locked".into()));
+        assert!(matches!(
+            Pairing::load_from(&entry),
+            Err(PairingError::Keyring(_))
+        ));
+
+        entry.set_password("{corrupt").unwrap();
+        assert!(Pairing::load_from(&entry).is_err());
+
+        let pairing = Pairing::generate(DEFAULT_RELAY).unwrap();
+        pairing.save_to(&entry).unwrap();
+        assert_eq!(
+            Pairing::load_from(&entry).unwrap().unwrap().topic,
+            pairing.topic
+        );
     }
 
     /// Touches the real OS keyring under a separate service name.

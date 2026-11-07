@@ -363,8 +363,9 @@ async fn deliver(
             Delivery::Copied { reason }
         }
         Err(e) => {
-            toast(app, notify, &format!("Could not deliver code: {e}"));
-            Delivery::Failed { reason: e }
+            let reason = format!("{reason}; copying failed: {e}");
+            toast(app, notify, &format!("Could not deliver code: {reason}"));
+            Delivery::Failed { reason }
         }
     }
 }

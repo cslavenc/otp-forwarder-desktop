@@ -5,6 +5,7 @@
   let autostart = $state(false);
   let error = $state("");
   let saveError = $state("");
+  let autostartError = $state("");
   let saved = $state(false);
   let saving = $state(false);
 
@@ -20,14 +21,20 @@
   });
 
   async function toggleAutostart(box: HTMLInputElement) {
-    error = "";
+    autostartError = "";
     try {
       await setAutostart(box.checked);
       autostart = box.checked;
     } catch (e) {
       box.checked = autostart;
-      error = errorText(e);
+      autostartError = errorText(e);
     }
+  }
+
+  function editRules(edit: (rules: Settings["rules"]) => void) {
+    if (!settings) return;
+    edit(settings.rules);
+    saved = false;
   }
 
   async function save(event: SubmitEvent) {
@@ -36,8 +43,12 @@
     saveError = "";
     saved = false;
     saving = true;
+    // Cleared number inputs bind as null.
+    const s = $state.snapshot(settings);
+    s.clipboard_clear_secs = Number(s.clipboard_clear_secs) || 0;
+    for (const rule of s.rules) rule.delay_ms = Number(rule.delay_ms) || 0;
     try {
-      await setSettings($state.snapshot(settings));
+      await setSettings(s);
       saved = true;
     } catch (e) {
       saveError = errorText(e);
@@ -53,6 +64,7 @@
   <input type="checkbox" role="switch" checked={autostart} onchange={(e) => toggleAutostart(e.currentTarget)} />
   Start with Windows
 </label>
+{#if autostartError}<p class="error" role="alert">{autostartError}</p>{/if}
 
 {#if settings}
   <form onsubmit={save} oninput={() => (saved = false)}>
@@ -93,7 +105,7 @@
                 type="button"
                 class="outline secondary"
                 aria-label="Remove rule"
-                onclick={() => settings?.rules.splice(i, 1)}>×</button
+                onclick={() => editRules((rules) => rules.splice(i, 1))}>×</button
               >
             </td>
           </tr>
@@ -103,7 +115,7 @@
     <button
       type="button"
       class="outline"
-      onclick={() => settings?.rules.push({ exe: "", enabled: true, press_enter: false, delay_ms: 15 })}
+      onclick={() => editRules((rules) => rules.push({ exe: "", enabled: true, press_enter: false, delay_ms: 15 }))}
     >
       Add app
     </button>

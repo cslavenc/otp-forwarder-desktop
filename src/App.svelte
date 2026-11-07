@@ -86,7 +86,7 @@
   </nav>
 
   <section hidden={tab !== "recent"}><Recent /></section>
-  <section hidden={tab !== "pairing"}><Pairing onrepaired={refresh} /></section>
+  <section hidden={tab !== "pairing"}><Pairing active={tab === "pairing"} onrepaired={refresh} /></section>
   <section hidden={tab !== "settings"}><Settings /></section>
 </main>
 

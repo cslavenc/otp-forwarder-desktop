@@ -1,10 +1,10 @@
 <script lang="ts">
   import { errorText, getPairingInfo, pairingQr, repair, type PairingInfo } from "./ipc";
 
-  let { onrepaired }: { onrepaired: () => void } = $props();
+  let { active, onrepaired }: { active: boolean; onrepaired: () => void } = $props();
 
   let info = $state<PairingInfo | null>(null);
-  // The QR contains the key: fetched only on demand and dropped when hidden.
+  // The QR contains the key: fetched on demand, dropped when the tab or the window is hidden.
   let qr = $state<string | null>(null);
   let busy = $state(false);
   let error = $state("");
@@ -21,6 +21,18 @@
     load();
   });
 
+  $effect(() => {
+    if (!active) qr = null;
+  });
+
+  $effect(() => {
+    const onVisibility = () => {
+      if (document.hidden) qr = null;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  });
+
   async function toggleQr() {
     error = "";
     if (qr) {
@@ -28,10 +40,15 @@
       return;
     }
     try {
-      qr = await pairingQr();
+      showQr(await pairingQr());
     } catch (e) {
       error = errorText(e);
     }
+  }
+
+  // The fetch may finish after the tab or window was hidden.
+  function showQr(svg: string | null) {
+    qr = active && !document.hidden ? svg : null;
   }
 
   async function rePair() {
@@ -44,7 +61,7 @@
     try {
       await repair();
       await load();
-      qr = info?.paired ? await pairingQr() : null;
+      showQr(info?.paired ? await pairingQr() : null);
       onrepaired();
     } catch (e) {
       error = errorText(e);

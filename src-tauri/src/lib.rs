@@ -89,7 +89,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     };
     let hotkey = settings.hotkey.clone();
     let notify = settings.notifications;
-    let pairing = load_or_create_pairing();
+    let pairing = match Pairing::entry() {
+        Ok(entry) => load_or_create_pairing(&entry),
+        Err(e) => PairingState::Unpaired {
+            detail: e.to_string(),
+        },
+    };
     let paired = matches!(pairing, PairingState::Paired(_));
 
     let (relay_tx, relay_rx) = mpsc::channel(RELAY_QUEUE);
@@ -122,10 +127,10 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Only a missing pairing is generated (03 #13); an unreadable one is kept for the user to
 /// replace explicitly via re-pair.
-fn load_or_create_pairing() -> PairingState {
-    let pairing = match Pairing::load() {
+fn load_or_create_pairing(entry: &keyring::Entry) -> PairingState {
+    let pairing = match Pairing::load_from(entry) {
         Ok(Some(pairing)) => Ok(pairing),
-        Ok(None) => Pairing::generate(DEFAULT_RELAY).and_then(|p| p.save().map(|()| p)),
+        Ok(None) => Pairing::generate(DEFAULT_RELAY).and_then(|p| p.save_to(entry).map(|()| p)),
         Err(e) => Err(e),
     };
     match pairing {
@@ -177,10 +182,55 @@ fn show_main_window(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    use keyring::mock::MockCredential;
+
+    use super::*;
+
+    fn mock_entry() -> keyring::Entry {
+        keyring::Entry::new_with_credential(Box::new(MockCredential::default()))
+    }
+
     /// Canary for tauri#13419: this test binary links Tauri, so it only starts if build.rs
     /// embedded the Common-Controls v6 manifest.
     #[test]
     fn test_binary_with_tauri_starts() {
         let _linked: fn() = super::run;
+    }
+
+    #[test]
+    fn missing_pairing_is_generated_and_saved() {
+        let entry = mock_entry();
+        let PairingState::Paired(pairing) = load_or_create_pairing(&entry) else {
+            panic!("expected a new pairing");
+        };
+        let saved = entry.get_password().unwrap();
+        assert!(saved.contains(&pairing.topic));
+    }
+
+    #[test]
+    fn keyring_error_leaves_the_pairing_untouched() {
+        let entry = mock_entry();
+        let stored = Pairing::generate(DEFAULT_RELAY).unwrap();
+        stored.save_to(&entry).unwrap();
+        let before = entry.get_password().unwrap();
+        let mock: &MockCredential = entry.get_credential().downcast_ref().unwrap();
+        mock.set_error(keyring::Error::PlatformFailure("locked".into()));
+
+        assert!(matches!(
+            load_or_create_pairing(&entry),
+            PairingState::Unpaired { .. }
+        ));
+        assert_eq!(entry.get_password().unwrap(), before);
+    }
+
+    #[test]
+    fn corrupt_pairing_is_not_overwritten() {
+        let entry = mock_entry();
+        entry.set_password("{corrupt").unwrap();
+        assert!(matches!(
+            load_or_create_pairing(&entry),
+            PairingState::Unpaired { .. }
+        ));
+        assert_eq!(entry.get_password().unwrap(), "{corrupt");
     }
 }

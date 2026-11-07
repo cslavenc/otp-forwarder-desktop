@@ -121,14 +121,19 @@ impl Pairing {
     /// `Ok(None)` only when no pairing is stored; any other failure is an error so callers
     /// never overwrite an unreadable pairing.
     pub fn load() -> Result<Option<Self>, PairingError> {
-        Self::load_from(&keyring_entry(KEYRING_SERVICE)?)
+        Self::load_from(&Self::entry()?)
     }
 
     pub fn save(&self) -> Result<(), PairingError> {
-        self.save_to(&keyring_entry(KEYRING_SERVICE)?)
+        self.save_to(&Self::entry()?)
     }
 
-    fn load_from(entry: &keyring::Entry) -> Result<Option<Self>, PairingError> {
+    /// The app's keyring entry for the pairing.
+    pub(crate) fn entry() -> Result<keyring::Entry, PairingError> {
+        keyring_entry(KEYRING_SERVICE)
+    }
+
+    pub(crate) fn load_from(entry: &keyring::Entry) -> Result<Option<Self>, PairingError> {
         match entry.get_password() {
             Ok(json) => Self::from_json(&Zeroizing::new(json)).map(Some),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -136,7 +141,7 @@ impl Pairing {
         }
     }
 
-    fn save_to(&self, entry: &keyring::Entry) -> Result<(), PairingError> {
+    pub(crate) fn save_to(&self, entry: &keyring::Entry) -> Result<(), PairingError> {
         entry.set_password(&self.to_json()?).map_err(keyring_error)
     }
 }

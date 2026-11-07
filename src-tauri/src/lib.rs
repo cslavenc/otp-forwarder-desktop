@@ -10,7 +10,7 @@ pub mod settings;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::ShortcutState;
 use tokio::sync::mpsc;
@@ -69,8 +69,13 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                pipeline::clear_clipboard_now(app);
+            }
+        });
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -141,10 +146,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             MENU_SHOW => show_main_window(app),
-            MENU_QUIT => {
-                pipeline::clear_clipboard_now(app);
-                app.exit(0);
-            }
+            MENU_QUIT => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

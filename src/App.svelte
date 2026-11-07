@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { errorText, getStatus, onRelayStatus, type Status } from "./lib/ipc";
+  import { errorText, getStatus, listRecent, onRelayStatus, type Status } from "./lib/ipc";
   import Recent from "./lib/Recent.svelte";
   import Pairing from "./lib/Pairing.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -24,8 +24,9 @@
   }
 
   $effect(() => {
-    refresh().then(() => {
-      if (status && !status.paired) tab = "pairing";
+    // No codes yet usually means the phone still has to scan the QR code.
+    Promise.all([refresh(), listRecent().catch(() => [])]).then(([, recent]) => {
+      if (status && (!status.paired || recent.length === 0)) tab = "pairing";
     });
     return onRelayStatus((relay) => {
       if (status) status.relay = relay;

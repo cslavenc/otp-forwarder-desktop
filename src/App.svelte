@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { errorText, getStatus, listRecent, onRelayStatus, type Status } from "./lib/ipc";
+  import {
+    errorText,
+    getStatus,
+    listRecent,
+    onRelayStatus,
+    subscribe,
+    type RelayStatus,
+    type Status,
+  } from "./lib/ipc";
   import Recent from "./lib/Recent.svelte";
   import Pairing from "./lib/Pairing.svelte";
   import Settings from "./lib/Settings.svelte";
@@ -14,24 +22,36 @@
   let status = $state<Status | null>(null);
   let tab = $state<Tab>("recent");
   let error = $state("");
+  // Relay events win over a fetch that was in flight when they arrived.
+  let pendingRelay: RelayStatus | null = null;
 
   async function refresh() {
     try {
       status = await getStatus();
+      if (pendingRelay) status.relay = pendingRelay;
+      pendingRelay = null;
+      error = "";
     } catch (e) {
       error = errorText(e);
     }
   }
 
-  $effect(() => {
-    // No codes yet usually means the phone still has to scan the QR code.
-    Promise.all([refresh(), listRecent().catch(() => [])]).then(([, recent]) => {
-      if (status && (!status.paired || recent.length === 0)) tab = "pairing";
-    });
-    return onRelayStatus((relay) => {
-      if (status) status.relay = relay;
-    });
-  });
+  $effect(() =>
+    subscribe(
+      [
+        onRelayStatus((relay) => {
+          if (status) status.relay = relay;
+          else pendingRelay = relay;
+        }),
+      ],
+      async () => {
+        // No codes yet usually means the phone still has to scan the QR code.
+        const [, recent] = await Promise.all([refresh(), listRecent().catch(() => [])]);
+        if (tab === "recent" && status && (!status.paired || recent.length === 0)) tab = "pairing";
+      },
+      (e) => (error = e),
+    ),
+  );
 
   const badge = $derived.by(() => {
     if (!status) return "…";

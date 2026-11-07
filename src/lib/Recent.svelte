@@ -7,6 +7,7 @@
     onRejected,
     revealCode,
     sendTestCode,
+    subscribe,
     type Delivery,
     type Reject,
     type RecentView,
@@ -25,16 +26,25 @@
   const visible = $derived(items.filter((r) => r.expires_ms > now));
 
   $effect(() => {
-    listRecent().then(
-      (r) => (items = r),
-      (e) => (error = errorText(e)),
+    let gotEvent = false;
+    const stop = subscribe(
+      [
+        onRecent((r) => {
+          gotEvent = true;
+          items = r;
+        }),
+        onRejected((r) => (rejection = r)),
+      ],
+      async () => {
+        const r = await listRecent();
+        // An event that arrived meanwhile is at least as new.
+        if (!gotEvent) items = r;
+      },
+      (e) => (error = e),
     );
-    const offRecent = onRecent((r) => (items = r));
-    const offRejected = onRejected((r) => (rejection = r));
     const tick = setInterval(() => (now = Date.now()), 1000);
     return () => {
-      offRecent();
-      offRejected();
+      stop();
       clearInterval(tick);
     };
   });

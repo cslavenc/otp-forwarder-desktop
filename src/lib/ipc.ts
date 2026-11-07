@@ -79,12 +79,34 @@ export const revealCode = (id: string) => invoke<string>("reveal_code", { id });
 export const copyCode = (id: string) => invoke<void>("copy_code", { id });
 export const sendTestCode = () => invoke<void>("send_test_code");
 
-/** Subscribes; the returned function unsubscribes (safe to call before `listen` resolves). */
-function on<T>(event: string, handler: (payload: T) => void): () => void {
-  const unlisten: Promise<UnlistenFn> = listen<T>(event, (e) => handler(e.payload));
-  return () => void unlisten.then((f) => f());
-}
+const on = <T>(event: string, handler: (payload: T) => void) =>
+  listen<T>(event, (e) => handler(e.payload));
 
 export const onRelayStatus = (h: (s: RelayStatus) => void) => on("relay-status", h);
 export const onRecent = (h: (r: RecentView[]) => void) => on("recent", h);
 export const onRejected = (h: (r: Reject) => void) => on("rejected", h);
+
+/**
+ * Waits for `listeners` to be registered, then runs `ready` (the initial fetch), so no event is
+ * lost in between. Listener and `ready` errors go to `onError`. Returns a sync cleanup for `$effect`.
+ */
+export function subscribe(
+  listeners: Promise<UnlistenFn>[],
+  ready: () => Promise<unknown>,
+  onError: (message: string) => void,
+): () => void {
+  let closed = false;
+  const settled = Promise.allSettled(listeners);
+  settled
+    .then(async (results) => {
+      for (const r of results) if (r.status === "rejected") onError(errorText(r.reason));
+      if (!closed) await ready();
+    })
+    .catch((e) => onError(errorText(e)));
+  return () => {
+    closed = true;
+    settled
+      .then((results) => results.forEach((r) => r.status === "fulfilled" && r.value()))
+      .catch((e) => onError(errorText(e)));
+  };
+}

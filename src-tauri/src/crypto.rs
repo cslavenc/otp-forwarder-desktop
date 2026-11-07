@@ -205,6 +205,11 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(decrypt(&key, TOPIC, &a).unwrap().as_slice(), b"hello");
         assert_eq!(decrypt(&key, TOPIC, &b).unwrap().as_slice(), b"hello");
+        // Contract §2: decoders accept padded bodies (6 + 28 bytes → 46 chars + "==").
+        let short = encrypt(&key, TOPIC, b"hello!").unwrap();
+        assert_eq!(short.len(), 46);
+        let padded = format!("{short}==");
+        assert_eq!(decrypt(&key, TOPIC, &padded).unwrap().as_slice(), b"hello!");
     }
 
     #[test]

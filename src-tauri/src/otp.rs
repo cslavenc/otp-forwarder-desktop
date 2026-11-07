@@ -444,6 +444,38 @@ mod tests {
     }
 
     #[test]
+    fn first_failing_check_in_contract_order_wins() {
+        let stale = NOW - MAX_AGE_MS - 1;
+        // Size is checked before JSON.
+        let not_json = "x".repeat(MAX_PLAINTEXT_BYTES + 1);
+        assert_eq!(reject_of(&body(&not_json)), Reject::TooLarge);
+        let json = format!(r#"{{"v":2,"id":"bad","code":"1","sender":"\n","ts":{stale}}}"#);
+        assert_eq!(reject_of(&body(&json)), Reject::UnsupportedVersion { v: 2 });
+        assert_eq!(
+            reject_of(&message("bad", "1", "\n", stale)),
+            Reject::InvalidId
+        );
+        assert_eq!(
+            reject_of(&message(ID, "1", "\n", stale)),
+            Reject::InvalidCode
+        );
+        assert_eq!(
+            reject_of(&message(ID, "1234", "\n", stale)),
+            Reject::InvalidSender
+        );
+
+        // A late replay of an accepted id is reported as stale, not duplicate.
+        let mut seen = Dedupe::default();
+        let msg = message(ID, "1234", "", NOW);
+        assert!(receive(&key(), TOPIC, &msg, NOW, &mut seen).is_ok());
+        let later = NOW + MAX_AGE_MS + 1;
+        assert_eq!(
+            receive(&key(), TOPIC, &msg, later, &mut seen).err(),
+            Some(Reject::Stale { age_s: 120 })
+        );
+    }
+
+    #[test]
     fn rejected_messages_are_not_recorded() {
         let mut seen = Dedupe::default();
         let stale = message(ID, "123456", "", NOW - MAX_AGE_MS - 1);

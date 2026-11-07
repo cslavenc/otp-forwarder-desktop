@@ -1,7 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Main window: event listening and the app's own commands only; plugins are Rust-only",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-status",
+    "allow-get-pairing-info",
+    "allow-pairing-qr",
+    "allow-repair",
+    "allow-get-settings",
+    "allow-set-settings",
+    "allow-get-autostart",
+    "allow-set-autostart",
+    "allow-list-recent",
+    "allow-reveal-code",
+    "allow-copy-code",
+    "allow-send-test-code"
+  ]
 }

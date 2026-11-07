@@ -14,12 +14,13 @@
       {
         "label": "main",
         "title": "OTP Forwarder",
-        "width": 800,
-        "height": 600
+        "width": 440,
+        "height": 600,
+        "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {

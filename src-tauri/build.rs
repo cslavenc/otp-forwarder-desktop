@@ -6,8 +6,23 @@ fn main() {
 
     // Tauri's own manifest is only linked into bins, so lib tests and examples would fail to
     // start with STATUS_ENTRYPOINT_NOT_FOUND (tauri#13419). We embed ours into every target.
+    // Listing the commands makes each one need an explicit `allow-*` in the capabilities.
     let attributes = tauri_build::Attributes::new()
-        .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+        .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest())
+        .app_manifest(tauri_build::AppManifest::new().commands(&[
+            "get_status",
+            "get_pairing_info",
+            "pairing_qr",
+            "repair",
+            "get_settings",
+            "set_settings",
+            "get_autostart",
+            "set_autostart",
+            "list_recent",
+            "reveal_code",
+            "copy_code",
+            "send_test_code",
+        ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri-build failed: {error:#}");
     }

@@ -102,6 +102,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         settings,
         settings_writable,
     ));
+    // Tray first, so the relay's first status reaches its tooltip.
+    build_tray(app)?;
     tauri::async_runtime::spawn(pipeline::run(app.clone(), relay_rx));
     pipeline::restart_relay(app);
 
@@ -111,7 +113,6 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         pipeline::toast(app, notify, &format!("Hotkey not active: {e}"));
     }
 
-    build_tray(app)?;
     let minimized = std::env::args().any(|arg| arg == MINIMIZED_ARG);
     if !(minimized && paired) {
         show_main_window(app);

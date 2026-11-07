@@ -11,7 +11,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use otp_forwarder_desktop_lib::pairing::Pairing;
 use otp_forwarder_desktop_lib::{crypto, otp, relay};
-use serde::Serialize;
 use zeroize::Zeroizing;
 
 const USAGE: &str = "usage: otpfwd-send --code <CODE> [--pairing <file>] [--sender <S>] [--id <ID>] \
@@ -26,15 +25,6 @@ struct Args {
     /// Backdates `ts`; negative values date it into the future.
     age_secs: i64,
     delay_secs: u64,
-}
-
-#[derive(Serialize)]
-struct Plaintext<'a> {
-    v: u8,
-    id: &'a str,
-    code: &'a str,
-    sender: &'a str,
-    ts: i64,
 }
 
 fn main() -> ExitCode {
@@ -61,6 +51,10 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut args = Args::default();
     let mut code = None;
     while let Some(flag) = it.next() {
+        // A stray value could be the code, so it is never echoed.
+        if !flag.starts_with("--") {
+            return Err("unexpected argument (not shown)".into());
+        }
         let value = it.next().ok_or(format!("missing value for {flag}"));
         match flag.as_str() {
             "--code" => code = Some(Zeroizing::new(value?)),
@@ -92,14 +86,8 @@ fn send(args: Args) -> Result<String, String> {
         None => otp::new_id().map_err(|e| e.to_string())?,
     };
     sleep(Duration::from_secs(args.delay_secs));
-    let plaintext = Plaintext {
-        v: otp::VERSION,
-        id: &id,
-        code: &args.code,
-        sender: &args.sender,
-        ts: now_ms().saturating_sub(args.age_secs.saturating_mul(1000)),
-    };
-    let json = Zeroizing::new(serde_json::to_string(&plaintext).map_err(|e| e.to_string())?);
+    let ts = now_ms().saturating_sub(args.age_secs.saturating_mul(1000));
+    let json = otp::encode_plaintext(&id, &args.code, &args.sender, ts);
     let body = crypto::encrypt(&pairing.key, &pairing.topic, json.as_bytes())
         .map_err(|e| e.to_string())?;
     tauri::async_runtime::block_on(async {
@@ -126,4 +114,71 @@ fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        parse_args(args.iter().map(|a| (*a).to_owned()))
+    }
+
+    fn error(args: &[&str]) -> String {
+        match parse(args) {
+            Err(e) => e,
+            Ok(_) => panic!("arguments were unexpectedly accepted"),
+        }
+    }
+
+    #[test]
+    fn parses_all_flags() {
+        let args = parse(&[
+            "--code",
+            "AbC123",
+            "--pairing",
+            "p.json",
+            "--sender",
+            "Bank",
+            "--id",
+            "x",
+            "--age-secs",
+            "-30",
+            "--delay-secs",
+            "2",
+        ])
+        .unwrap();
+        assert_eq!(args.code.as_str(), "AbC123");
+        assert_eq!(args.pairing.as_deref(), Some("p.json"));
+        assert_eq!(args.sender, "Bank");
+        assert_eq!(args.id.as_deref(), Some("x"));
+        assert_eq!(args.age_secs, -30);
+        assert_eq!(args.delay_secs, 2);
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_code() {
+        assert!(error(&["--sender", "Bank"]).contains("--code is required"));
+        let e = error(&["--code", "12-34"]);
+        assert!(e.contains("--code must be") && !e.contains("12-34"), "{e}");
+    }
+
+    #[test]
+    fn never_echoes_positional_arguments() {
+        for args in [&["123456"][..], &["--code", "123456", "654321"]] {
+            let e = error(args);
+            assert!(!e.contains("123456") && !e.contains("654321"), "{e}");
+        }
+        // A flag missing its value must not swallow-and-echo the next one either.
+        let e = error(&["--sender", "--code", "123456"]);
+        assert!(!e.contains("123456"), "{e}");
+    }
+
+    #[test]
+    fn rejects_bad_flags_and_values() {
+        assert!(error(&["--code", "1234", "--sender"]).contains("missing value for --sender"));
+        assert!(error(&["--code", "1234", "--bogus", "1"]).contains("unknown argument --bogus"));
+        assert!(error(&["--code", "1234", "--age-secs", "ten"]).contains("whole number"));
+        assert!(error(&["--code", "1234", "--delay-secs", "-1"]).contains("whole number"));
+    }
 }

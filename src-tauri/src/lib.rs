@@ -10,7 +10,7 @@ pub mod settings;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::ShortcutState;
 use tokio::sync::mpsc;
@@ -67,6 +67,8 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                // Lets the UI drop the pairing QR (it holds the key) while hidden in the tray.
+                let _ = window.emit("hidden", ());
             }
         })
         .build(tauri::generate_context!())

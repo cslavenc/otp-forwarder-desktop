@@ -85,6 +85,7 @@ const on = <T>(event: string, handler: (payload: T) => void) =>
 export const onRelayStatus = (h: (s: RelayStatus) => void) => on("relay-status", h);
 export const onRecent = (h: (r: RecentView[]) => void) => on("recent", h);
 export const onRejected = (h: (r: Reject) => void) => on("rejected", h);
+export const onHidden = (h: () => void) => on<null>("hidden", () => h());
 
 /**
  * Waits for `listeners` to be registered, then runs `ready` (the initial fetch), so no event is

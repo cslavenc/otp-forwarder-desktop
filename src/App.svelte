@@ -3,6 +3,7 @@
     errorText,
     getStatus,
     listRecent,
+    onHidden,
     onRelayStatus,
     subscribe,
     type RelayStatus,
@@ -42,6 +43,10 @@
         onRelayStatus((relay) => {
           if (status) status.relay = relay;
           else pendingRelay = relay;
+        }),
+        // Leaving the Pairing tab drops the QR code (it contains the key).
+        onHidden(() => {
+          if (tab === "pairing") tab = "recent";
         }),
       ],
       async () => {

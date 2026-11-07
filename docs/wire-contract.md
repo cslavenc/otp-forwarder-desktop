@@ -101,7 +101,8 @@ GET {relay}/{topic}/json?since=<unix seconds>
 
 - NDJSON stream, one event per line. Only `open`, `keepalive` and `message` events are used; others are ignored.
   The `message` field of a `message` event is the body. A `message` event without a `message` field (an attachment,
-  over 4096 bytes) is ignored. Lines longer than 16 KiB drop the connection.
+  over 4096 bytes) is ignored. Lines longer than 16 KiB are skipped without buffering them (dropping the connection
+  would re-fetch the same cached line forever).
 - Keepalives arrive about every 45 s. Every event carries the server time `time` (Unix seconds).
 - **`since`**: on the first connect after process start, `since = process start (unix s) − 5`. On reconnect,
   `since = max(time of any event seen) − 5`. This uses the server's clock, so it is skew-free, and the overlap is

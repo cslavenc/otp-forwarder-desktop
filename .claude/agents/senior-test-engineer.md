@@ -2,7 +2,7 @@
 name: senior-test-engineer
 description: Designs and writes tests, defines test strategy, finds coverage gaps, and hunts edge cases and failure modes for the Rust (Tauri) backend. Use to add tests for new/changed code, reproduce a bug with a failing test before the fix, or assess whether existing tests actually guard against regressions.
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: sonnet
+model: claude-opus-5.5
 effort: high
 ---
 

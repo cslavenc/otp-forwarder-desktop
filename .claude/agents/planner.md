@@ -2,7 +2,7 @@
 name: planner
 description: Turns a feature request, bug, or vague goal into a concrete, sequenced implementation plan before any code is written — clarifying scope, ordering steps, identifying affected files, and surfacing open questions. Use at the start of any non-trivial or ambiguous task.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
-model: opus
+model: claude-opus-5.5
 effort: high
 ---
 

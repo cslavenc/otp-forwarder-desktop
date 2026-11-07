@@ -2,7 +2,7 @@
 name: senior-architect
 description: For high-leverage design decisions — module boundaries, the desktop ↔ Android wire and pairing contract, crypto design, platform abstraction, choosing between crates/Tauri plugins, and assessing impact on security and maintainability. Use when a change is large, crosses module boundaries, changes the wire contract, introduces a new dependency or pattern, or when several designs compete.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
-model: opus
+model: claude-opus-5.5
 effort: high
 ---
 

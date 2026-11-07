@@ -2,7 +2,7 @@
 name: sparring-partner
 description: Stress-tests a plan, design, or idea before commitment — playing devil's advocate to surface flawed assumptions, edge cases, failure modes, second-order effects, and simpler alternatives so the feature is stronger before code. Use right after the planner or senior-architect produces a proposal, or when a decision feels too comfortable.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
-model: opus
+model: claude-opus-5.5
 effort: high
 ---
 

@@ -1,8 +1,8 @@
 ---
 name: final-code-reviewer
-description: Deep final review (Opus) for complex or high-risk changes, invoked after code-reviewer has already passed the change. Use when the change touches crypto or key handling, QR pairing, the desktop ↔ Android wire contract, keystroke injection or foreground-window/allowlist rules, `unsafe`/Win32 FFI, Tauri capabilities/permissions, a new dependency or plugin, or is a large diff (~500+ changed lines / 15+ files). Not for routine UI tweaks — code-reviewer alone covers that.
+description: Deep final review for complex or high-risk changes, invoked after code-reviewer has already passed the change. Use when the change touches crypto or key handling, QR pairing, the desktop ↔ Android wire contract, keystroke injection or foreground-window/allowlist rules, `unsafe`/Win32 FFI, Tauri capabilities/permissions, a new dependency or plugin, or is a large diff (~500+ changed lines / 15+ files). Not for routine UI tweaks — code-reviewer alone covers that.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: claude-opus-5.5
 effort: high
 ---
 

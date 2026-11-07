@@ -1,8 +1,8 @@
 ---
 name: code-reviewer
-description: Standard reviewer (Sonnet) for every change — reviews a code change (diff, branch, or set of edits) for correctness, security, reliability, tests, readability, and design before it lands. Use after the senior-software-engineer completes an implementation, and again after senior-test-engineer for the test-coverage pass. For complex/high-risk changes, follow up with final-code-reviewer (Opus) as the last gate.
+description: Standard reviewer for every change — reviews a code change (diff, branch, or set of edits) for correctness, security, reliability, tests, readability, and design before it lands. Use after the senior-software-engineer completes an implementation, and again after senior-test-engineer for the test-coverage pass. For complex/high-risk changes, follow up with final-code-reviewer as the last gate.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: claude-opus-5.5
 effort: high
 ---
 

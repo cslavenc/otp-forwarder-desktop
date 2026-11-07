@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{self, CryptoError, Key};
 
@@ -101,6 +101,27 @@ pub fn receive(
 /// New message id: base64url of 16 random bytes.
 pub fn new_id() -> Result<String, CryptoError> {
     crypto::generate_topic()
+}
+
+/// Plaintext JSON for a message, as the phone sends it (for the CLI and test codes).
+pub fn encode_plaintext(id: &str, code: &str, sender: &str, ts: i64) -> Zeroizing<String> {
+    #[derive(Serialize)]
+    struct Plaintext<'a> {
+        v: u8,
+        id: &'a str,
+        code: &'a str,
+        sender: &'a str,
+        ts: i64,
+    }
+    let plaintext = Plaintext {
+        v: VERSION,
+        id,
+        code,
+        sender,
+        ts,
+    };
+    // Serializing strings and integers cannot fail.
+    Zeroizing::new(serde_json::to_string(&plaintext).unwrap_or_default())
 }
 
 fn parse(plaintext: &[u8]) -> Result<OtpMessage, Reject> {
@@ -213,6 +234,18 @@ mod tests {
         assert_eq!(msg.id, ID);
         assert_eq!(msg.code, "123456");
         assert_eq!(msg.sender, "+41000000000");
+        assert_eq!(msg.ts, NOW);
+    }
+
+    #[test]
+    fn encoded_plaintext_round_trips_through_receive() {
+        let sender = r#"Bank "A" \ 24/7"#;
+        let json = encode_plaintext(ID, "AbC123", sender, NOW);
+        let msg = receive_at(&body(&json), NOW).unwrap();
+        assert_eq!(msg.v, VERSION);
+        assert_eq!(msg.id, ID);
+        assert_eq!(msg.code, "AbC123");
+        assert_eq!(msg.sender, sender);
         assert_eq!(msg.ts, NOW);
     }
 

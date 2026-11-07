@@ -77,7 +77,7 @@ UTF-8 JSON, at most **512 bytes**. Unknown fields are ignored. Duplicate fields 
 | `v`      | integer, must be `1`                                                                    |
 | `id`     | `^[A-Za-z0-9_-]{16,64}$`. A UUIDv4 is recommended on Android; the desktop CLI uses base64url of 16 random bytes |
 | `code`   | `^[A-Za-z0-9]{4,10}$` (ASCII only), typed verbatim with case preserved                  |
-| `sender` | optional, default `""`, at most 64 characters, no control characters                    |
+| `sender` | optional (missing or `null` → `""`), at most 64 characters, no control characters       |
 | `ts`     | integer Unix time in **milliseconds** (phone clock), when the message was created       |
 
 ## 6. Publish (phone → relay)

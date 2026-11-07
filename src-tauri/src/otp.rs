@@ -25,7 +25,7 @@ pub struct OtpMessage {
     pub v: u8,
     pub id: String,
     pub code: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub sender: String,
     /// Unix ms, phone clock.
     pub ts: i64,
@@ -134,6 +134,11 @@ pub fn is_valid_code(code: &str) -> bool {
         && code.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
+// Kotlin serializers emit `null` for absent optional strings.
+fn null_as_empty<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
+}
+
 fn is_valid_sender(sender: &str) -> bool {
     sender.chars().count() <= MAX_SENDER_CHARS && !sender.chars().any(char::is_control)
 }
@@ -217,6 +222,9 @@ mod tests {
         let msg = receive_at(&body(&json), NOW).unwrap();
         assert_eq!(msg.sender, "");
         assert_eq!(msg.code, "AbC123");
+
+        let json = format!(r#"{{"v":1,"id":"{ID}","code":"AbC123","sender":null,"ts":{NOW}}}"#);
+        assert_eq!(receive_at(&body(&json), NOW).unwrap().sender, "");
     }
 
     #[test]

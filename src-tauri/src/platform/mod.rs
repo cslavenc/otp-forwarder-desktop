@@ -35,7 +35,9 @@ pub enum PlatformError {
 
 pub trait Platform: Send + Sync {
     fn foreground(&self) -> Option<Foreground>;
-    /// Types `text` into `target`, `delay_ms` between keys, re-checking focus before each key.
+    /// Types `text` into `target`, `delay_ms` between keys, re-checking focus and held
+    /// modifiers before each key. Blocks (sleeps, waits for modifiers to be released), so
+    /// call it from `spawn_blocking`, never on an async worker or the UI thread.
     fn type_text(
         &self,
         target: &Foreground,

@@ -118,6 +118,18 @@ Open the app, then **Task Manager → Details**, and find the row that uses CPU 
 3. Click **Show QR code** and scan it with the Android app. The badge in the top-right should say **Connected**.
 4. Optional: in **Settings**, enable *Start with Windows*, adjust the allowlist, and click **Save**.
 
+### Getting the app onto your phone
+
+The phone side is the separate `otp-forwarder-android` repo. From its folder, with the phone connected via USB or
+wireless debugging, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-install.ps1
+```
+
+It builds the release APK and installs it (or leaves `release\otp-forwarder.apk` to copy manually). See that repo's
+README for phone setup and pairing.
+
 Settings are stored in `%APPDATA%\ch.cslavenc.otpforwarder\settings.json`; the pairing key in Windows Credential
 Manager (generic credential `ch.cslavenc.otpforwarder`). **Re-pair** creates a new key and topic — the phone must scan
 again.

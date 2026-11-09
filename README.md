@@ -112,8 +112,8 @@ Open the app, then **Task Manager → Details**, and find the row that uses CPU 
 
 ## Install and first run
 
-1. Build the installer (see [Development](#development)) and run
-   `src-tauri\target\release\bundle\nsis\OTP Forwarder_0.1.0_x64-setup.exe`.
+1. Build the installer with `npm run release` (see [Building the exe files](#building-the-exe-files)) and run
+   `release\OTP Forwarder_0.1.0_x64-setup.exe`.
 2. Start **OTP Forwarder**. On first start it creates a pairing and opens the **Pairing** tab.
 3. Click **Show QR code** and scan it with the Android app. The badge in the top-right should say **Connected**.
 4. Optional: in **Settings**, enable *Start with Windows*, adjust the allowlist, and click **Save**.
@@ -197,6 +197,30 @@ npm run check           # frontend type-check
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
+
+### Building the exe files
+
+One command builds everything (first run takes several minutes; later runs are faster):
+
+```powershell
+npm run release
+```
+
+It runs [`scripts/build-release.ps1`](scripts/build-release.ps1), which stops at the first failing step:
+
+1. `npm ci`: installs the exact JS dependencies from `package-lock.json`
+2. `npm run check`, `cargo test` and `cargo clippy`: a broken build is never packaged
+3. `npm run tauri build`: compiles the release app and the NSIS installer
+4. copies the results into `release\` (emptied first, git-ignored):
+
+| File                                     | Use                                                                 |
+|------------------------------------------|---------------------------------------------------------------------|
+| `OTP Forwarder_<version>_x64-setup.exe`  | Installer: Start-menu entry, uninstaller, installs WebView2 if missing |
+| `OTP Forwarder_<version>_x64-portable.exe` | The app itself, no install; needs the WebView2 runtime              |
+
+The version comes from `src-tauri/tauri.conf.json`. Without npm you can run the script directly:
+`powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1`. The exe files are unsigned, so Windows
+SmartScreen may warn on first start (**More info → Run anyway**).
 
 Code map (all security-relevant logic is in Rust; the Svelte UI only displays and edits settings):
 

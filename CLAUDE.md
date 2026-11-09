@@ -140,6 +140,7 @@ otp-forwarder-desktop/
 | Install JS deps         | `npm install`                                                   |
 | Run app (dev)           | `npm run tauri dev`                                             |
 | Build installer         | `npm run tauri build` (NSIS, bootstraps WebView2 on Win 10)     |
+| Build release exe files | `npm run release` (checks + build, copies both exe to `release\`) |
 | Test sender CLI         | `cargo run --manifest-path src-tauri/Cargo.toml --example otpfwd-send -- --code 123456` |
 | Frontend type-check     | `npm run check` (svelte-check)                                  |
 | Rust tests              | `cargo test --manifest-path src-tauri/Cargo.toml`               |

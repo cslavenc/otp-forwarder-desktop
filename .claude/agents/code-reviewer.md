@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Standard reviewer for every change — reviews a code change (diff, branch, or set of edits) for correctness, security, reliability, tests, readability, and design before it lands. Use after the senior-software-engineer completes an implementation, and again after senior-test-engineer for the test-coverage pass. For complex/high-risk changes, follow up with final-code-reviewer as the last gate.
+description: Standard reviewer for every change — reviews a code change (diff, branch, or set of edits) for correctness, security, reliability, tests, readability, and design before it lands. Use after the senior-software-engineer completes an implementation (code and tests), including a check for missing test coverage.
 tools: Read, Grep, Glob, Bash
 model: claude-opus-5.5
 effort: high

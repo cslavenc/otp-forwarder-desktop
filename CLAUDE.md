@@ -55,22 +55,18 @@ For any non-trivial task, drive the work through subagents in this order. Steps 
 **Feedback always loops back to the specific agent that owns the thing being changed and is never patched inline by
 whichever agent happens to be running.** If sparring-partner (or anyone else) finds a gap in the plan or design,
 re-invoke **planner** (and **senior-architect** too, if the gap is architectural) with that feedback — don't silently
-work around it. If a reviewer finds an implementation problem, re-invoke **senior-software-engineer**; if it finds a
-test-coverage gap, re-invoke **senior-test-engineer**. Keep looping a step until its reviewer/critic is satisfied before
-moving on.
+work around it. If a reviewer finds an implementation or test-coverage problem, re-invoke
+**senior-software-engineer**, which owns both the code and its tests. Keep looping a step until its reviewer/critic is
+satisfied before moving on.
 
 ```
 planner
   → (senior-architect)         ── fold its design back into the plan
   → sparring-partner           ── stress-test the plan
   → planner / senior-architect ── revise the plan/design if critique found gaps
-  → senior-software-engineer   ── implement
-  → code-reviewer              ── review the implementation
+  → senior-software-engineer   ── implement code + tests
+  → code-reviewer              ── review implementation and test coverage
   → senior-software-engineer   ── address findings (loop until clean)
-  → senior-test-engineer       ── add / strengthen tests
-  → code-reviewer              ── 2nd pass: are any test types missing?
-  → senior-test-engineer       ── address findings (loop until clean)
-  → (final-code-reviewer)      ── last gate for high-risk changes
 ```
 
 1. **planner** — turn the task into a concrete, sequenced plan.
@@ -79,16 +75,12 @@ planner
 3. **sparring-partner** — challenge assumptions, edge cases, failure modes, second-order effects, simpler alternatives.
 4. **planner and/or senior-architect** _(whenever sparring surfaced gaps)_ — revise the plan/design; re-run
    sparring-partner if the plan is substantially different.
-5. **senior-software-engineer** — implement the agreed plan.
-6. **code-reviewer** — correctness, security, reliability, design.
+5. **senior-software-engineer** — implement the agreed plan, including unit/edge-case/regression tests for the
+   new/changed code.
+6. **code-reviewer** — correctness, security, reliability, design, and test coverage (are unit / integration /
+   edge-case / regression tests missing?).
 7. **senior-software-engineer** _(whenever code-reviewer found issues)_ — address the findings; re-run code-reviewer if
    the fix is substantial.
-8. **senior-test-engineer** — cover the new/changed code.
-9. **code-reviewer** — second pass focused on test coverage: are unit / integration / edge-case / regression tests
-   missing?
-10. **senior-test-engineer** _(whenever this pass found gaps)_ — address the findings.
-11. **final-code-reviewer** _(high-risk changes only: crypto/key handling, pairing, the relay wire format, keystroke
-    injection / foreground-window rules, `unsafe`/FFI, Tauri capabilities, new dependencies, or large diffs)_.
 
 ## Implementing many user stories at once
 

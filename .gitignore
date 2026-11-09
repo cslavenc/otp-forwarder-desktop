@@ -4,6 +4,7 @@ plans
 plan
 node_modules
 dist
+release
 .env
 .env.*
 vite.config.ts.timestamp-*

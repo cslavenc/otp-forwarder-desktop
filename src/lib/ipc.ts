@@ -71,7 +71,8 @@ export const getPairingInfo = () => invoke<PairingInfo>("get_pairing_info");
 export const pairingQr = () => invoke<string>("pairing_qr");
 export const repair = () => invoke<void>("repair");
 export const getSettings = () => invoke<Settings>("get_settings");
-export const setSettings = (settings: Settings) => invoke<void>("set_settings", { settings });
+/** Resolves to a hotkey warning (the other settings were saved), or null. */
+export const setSettings = (settings: Settings) => invoke<string | null>("set_settings", { settings });
 export const getAutostart = () => invoke<boolean>("get_autostart");
 export const setAutostart = (enabled: boolean) => invoke<void>("set_autostart", { enabled });
 export const listRecent = () => invoke<RecentView[]>("list_recent");

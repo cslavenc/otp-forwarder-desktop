@@ -8,10 +8,14 @@
   let autostartError = $state("");
   let saved = $state(false);
   let saving = $state(false);
+  let savedHotkey = "";
 
   $effect(() => {
     getSettings().then(
-      (s) => (settings = s),
+      (s) => {
+        settings = s;
+        savedHotkey = s.hotkey;
+      },
       (e) => (error = errorText(e)),
     );
     getAutostart().then(
@@ -48,7 +52,13 @@
     s.clipboard_clear_secs = Number(s.clipboard_clear_secs) || 0;
     for (const rule of s.rules) rule.delay_ms = Number(rule.delay_ms) || 0;
     try {
-      await setSettings(s);
+      const warning = await setSettings(s);
+      if (warning) {
+        saveError = warning;
+        settings.hotkey = savedHotkey;
+      } else {
+        savedHotkey = s.hotkey;
+      }
       saved = true;
     } catch (e) {
       saveError = errorText(e);

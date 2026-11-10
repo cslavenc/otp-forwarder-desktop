@@ -68,29 +68,42 @@ pub fn get_settings(state: State<'_, AppState>) -> Settings {
     state.lock().settings.clone()
 }
 
-/// Validates, swaps the hotkey, then saves; nothing changes on error. Sync commands run on the
-/// main thread, so the hotkey plugin's main-thread calls run inline while the state is locked.
+/// Validates, swaps the hotkey, then saves; nothing changes on error. A hotkey that cannot be
+/// parsed or registered does not block the save: the stored hotkey is kept and `Some(warning)`
+/// is returned. Sync commands run on the main thread, so the hotkey plugin's main-thread calls
+/// run inline while the state is locked.
 #[tauri::command]
 pub fn set_settings(
     app: AppHandle,
     state: State<'_, AppState>,
-    settings: Settings,
-) -> Result<(), String> {
+    mut settings: Settings,
+) -> Result<Option<String>, String> {
     settings.validate().map_err(|e| e.to_string())?;
-    let new_hotkey = pipeline::parse_hotkey(&settings.hotkey)?;
     let mut inner = state.lock();
     if !inner.settings_writable {
         return Err("settings file unreadable; restart the app".into());
     }
+    let old = inner.settings.hotkey.clone();
     // An invalid stored hotkey was never registered.
-    let old_hotkey = pipeline::parse_hotkey(&inner.settings.hotkey).unwrap_or(None);
-    pipeline::swap_hotkey(&app, old_hotkey, new_hotkey)?;
+    let old_key = pipeline::parse_hotkey(&old).unwrap_or(None);
+    let warning = match pipeline::parse_hotkey(&settings.hotkey)
+        .and_then(|new| pipeline::swap_hotkey(&app, old_key, new))
+    {
+        Ok(()) => None,
+        Err(e) => {
+            let tried = std::mem::replace(&mut settings.hotkey, old);
+            Some(format!("{tried} is not active: {e}"))
+        }
+    };
     if let Err(e) = settings.save(&state.settings_path) {
-        let _ = pipeline::swap_hotkey(&app, new_hotkey, old_hotkey);
+        let new_key = pipeline::parse_hotkey(&settings.hotkey).ok().flatten();
+        if new_key != old_key {
+            let _ = pipeline::swap_hotkey(&app, new_key, old_key);
+        }
         return Err(e.to_string());
     }
     inner.settings = settings;
-    Ok(())
+    Ok(warning)
 }
 
 #[tauri::command]

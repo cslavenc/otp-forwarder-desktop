@@ -10,10 +10,10 @@
     subscribe,
     type Settings,
   } from "./ipc";
+  import { normalizeExe } from "./exe";
 
   // Mirror src-tauri/src/settings.rs.
   const MAX_RULES = 50;
-  const MAX_EXE_CHARS = 64;
   const MAX_DELAY_MS = 500;
   const MAX_CLIPBOARD_CLEAR_SECS = 600;
   const SHELLS = [
@@ -46,6 +46,7 @@
   let addError = $state("");
   let addInput = $state<HTMLInputElement>();
   let rulesBody = $state<HTMLElement>();
+  let hotkeyInput = $state<HTMLInputElement>();
 
   let lastSaved = "";
   let savedHotkey = "";
@@ -72,21 +73,6 @@
   const status = $derived(
     fieldErrors.length > 0 ? `Not saved: fix ${fieldErrors[0].label}` : busy ? "Saving…" : flash,
   );
-
-  /** A bare `.exe` file name from a typed name or pasted path, or why it can't be used. */
-  function normalizeExe(raw: string): { exe: string } | { error: string } {
-    let name = raw.trim();
-    if (name.length >= 2 && name.startsWith('"') && name.endsWith('"')) name = name.slice(1, -1).trim();
-    name = name.split(/[\\/]/).pop() ?? "";
-    if (!name) return { error: "Enter an app name, e.g. notepad" };
-    const ext = /\.([a-z0-9]{1,4})$/i.exec(name)?.[1].toLowerCase();
-    if (ext && ext !== "exe") return { error: `${name} isn't a program — use the .exe it starts` };
-    if (!ext) name += ".exe";
-    const chars = [...name].length;
-    if (chars < 5 || chars > MAX_EXE_CHARS || /[\\/:\p{Cc}]/u.test(name))
-      return { error: `Use a file name like notepad.exe (at most ${MAX_EXE_CHARS} characters)` };
-    return { exe: name };
-  }
 
   const candidate = $derived(normalizeExe(newExe));
 
@@ -139,7 +125,10 @@
         if (fieldErrors.length > 0) break;
         const snap = $state.snapshot(settings);
         const json = JSON.stringify(snap);
-        if (json === lastSaved) continue;
+        if (json === lastSaved) {
+          saveError = "";
+          continue;
+        }
         let warning: string | null;
         try {
           warning = await setSettings(snap);
@@ -150,7 +139,9 @@
         saveError = "";
         showFlash();
         if (warning) {
-          if (settings.hotkey === snap.hotkey) settings.hotkey = savedHotkey;
+          // Not while typing: a blur flush would wipe a half-typed hotkey.
+          if (settings.hotkey === snap.hotkey && document.activeElement !== hotkeyInput)
+            settings.hotkey = savedHotkey;
           hotkeyWarning = warning;
           lastSaved = JSON.stringify({ ...snap, hotkey: savedHotkey });
         } else {
@@ -185,6 +176,12 @@
     addInput?.focus();
   }
 
+  async function retry() {
+    await save();
+    // The Retry button disappears on success; don't leave focus on nothing.
+    if (!saveError) addInput?.focus();
+  }
+
   async function remove(i: number) {
     if (!settings) return;
     const [rule] = settings.rules.splice(i, 1);
@@ -216,7 +213,7 @@
     {#if saveError}
       <p class="error" role="alert">
         Not saved: {saveError}
-        <button type="button" class="outline compact" onclick={save}>Retry</button>
+        <button type="button" class="outline compact" onclick={retry}>Retry</button>
       </p>
     {/if}
   </div>
@@ -257,6 +254,7 @@
     <tbody bind:this={rulesBody}>
       {#each settings.rules as rule, i (rule)}
         {@const delayError = fieldError(`delay-${i}`)}
+        {@const terminal = rule.press_enter && isShell(rule.exe)}
         <tr>
           <td class="exe">{rule.exe}</td>
           <td>
@@ -276,6 +274,7 @@
             <input
               type="checkbox"
               aria-label="Press Enter after typing into {rule.exe}"
+              aria-describedby={terminal ? `terminal-${i}` : undefined}
               bind:checked={
                 () => rule.press_enter,
                 (v) => {
@@ -306,8 +305,8 @@
             >
           </td>
         </tr>
-        {#if rule.press_enter && isShell(rule.exe)}
-          <tr><td colspan="5"><small class="error">{TERMINAL_WARNING}</small></td></tr>
+        {#if terminal}
+          <tr><td colspan="5"><small id="terminal-{i}" class="error">{TERMINAL_WARNING}</small></td></tr>
         {/if}
       {/each}
     </tbody>
@@ -366,7 +365,9 @@
   <label>
     Hotkey to type the last code (empty = off)
     <input
+      bind:this={hotkeyInput}
       bind:value={settings.hotkey}
+      onblur={save}
       onchange={save}
       placeholder="Ctrl+Alt+Shift+O"
       aria-invalid={hotkeyWarning ? true : undefined}

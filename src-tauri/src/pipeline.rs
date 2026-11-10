@@ -103,7 +103,10 @@ impl AppState {
         }
     }
 
-    /// Never hold the guard across `.await` or while calling into Tauri.
+    /// Never hold the guard across `.await` or while calling into Tauri. Exception: `set_settings`
+    /// holds it across `global_shortcut` calls on purpose, so the hotkey and settings change
+    /// atomically; that works only because it is a sync command (runs on the main thread, where
+    /// those calls run inline), so it must stay sync.
     pub(crate) fn lock(&self) -> MutexGuard<'_, Inner> {
         // The state stays consistent even if a holder panicked; keep serving it.
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)

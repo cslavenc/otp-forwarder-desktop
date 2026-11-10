@@ -100,7 +100,4 @@
     margin: 1rem auto;
     background: #fff;
   }
-  .error {
-    color: var(--pico-del-color);
-  }
 </style>

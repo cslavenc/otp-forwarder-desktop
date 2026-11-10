@@ -215,7 +215,4 @@
     border: 1px solid var(--pico-muted-border-color);
     border-radius: var(--pico-border-radius);
   }
-  .error {
-    color: var(--pico-del-color);
-  }
 </style>

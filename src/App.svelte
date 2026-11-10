@@ -2,7 +2,6 @@
   import {
     errorText,
     getStatus,
-    listRecent,
     onHidden,
     onRelayStatus,
     subscribe,
@@ -50,72 +49,143 @@
         }),
       ],
       async () => {
-        // No codes yet usually means the phone still has to scan the QR code.
-        const [, recent] = await Promise.all([refresh(), listRecent().catch(() => [])]);
-        if (tab === "recent" && status && (!status.paired || recent.length === 0)) tab = "pairing";
+        await refresh();
+        if (tab === "recent" && status && !status.paired) tab = "pairing";
       },
       (e) => (error = e),
     ),
   );
 
-  const badge = $derived.by(() => {
-    if (!status) return "…";
-    if (!status.paired) return "Not paired";
+  type Tone = "ok" | "busy" | "off";
+  const badge = $derived.by((): { tone: Tone; label: string; detail?: string } => {
+    if (!status) return { tone: "off", label: "…" };
+    if (!status.paired) return { tone: "off", label: "Not paired" };
     const relay = status.relay;
-    if (!relay || relay.state === "connecting") return "Connecting";
-    if (relay.state === "connected") return "Connected";
-    return `Reconnecting in ${relay.in_secs} s: ${relay.reason}`;
+    if (!relay || relay.state === "connecting") return { tone: "busy", label: "Connecting" };
+    if (relay.state === "connected") return { tone: "ok", label: "Connected" };
+    return { tone: "busy", label: "Reconnecting", detail: `Retrying in ${relay.in_secs} s: ${relay.reason}` };
   });
 </script>
 
-<main class="container">
+<div class="app">
   <header>
-    <strong>OTP Forwarder</strong>
-    <small class="badge" class:ok={badge === "Connected"} role="status">{badge}</small>
-  </header>
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-
-  <nav>
-    <ul>
-      {#each tabs as [id, label] (id)}
-        <li>
+    <div class="wrap">
+      <div class="bar">
+        <strong>OTP Forwarder</strong>
+        <span class="pill {badge.tone}" role="status"><span class="dot" aria-hidden="true"></span>{badge.label}</span>
+      </div>
+      <p class="detail" role="status">{#if badge.detail}<small class="muted">{badge.detail}</small>{/if}</p>
+      <nav class="tabs" aria-label="Sections">
+        {#each tabs as [id, label] (id)}
           <button
             type="button"
-            class:outline={tab !== id}
+            aria-controls="panel-{id}"
             aria-current={tab === id ? "page" : undefined}
             onclick={() => (tab = id)}>{label}</button
           >
-        </li>
-      {/each}
-    </ul>
-  </nav>
+        {/each}
+      </nav>
+    </div>
+  </header>
 
-  <section hidden={tab !== "recent"}><Recent /></section>
-  <section hidden={tab !== "pairing"}><Pairing active={tab === "pairing"} onrepaired={refresh} /></section>
-  <section hidden={tab !== "settings"}><Settings /></section>
-</main>
+  <div class="scroll">
+    <main class="wrap">
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+      <section id="panel-recent" aria-label="Codes" hidden={tab !== "recent"}><Recent /></section>
+      <section id="panel-pairing" aria-label="Pairing" hidden={tab !== "pairing"}>
+        <Pairing active={tab === "pairing"} onrepaired={refresh} />
+      </section>
+      <section id="panel-settings" aria-label="Settings" hidden={tab !== "settings"}><Settings /></section>
+    </main>
+  </div>
+</div>
 
 <style>
-  main {
-    padding-top: 0.75rem;
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  .wrap {
+    max-width: 36rem;
+    margin: 0 auto;
+    padding: 0 var(--pico-spacing);
   }
   header {
+    flex: none;
+    padding-top: 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .bar {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.75rem;
   }
-  .badge {
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.1rem 0.6rem;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+  .dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--pico-muted-color);
+  }
+  .ok .dot {
+    background: var(--pico-ins-color);
+  }
+  /* Amber reads on light and dark backgrounds; Pico has no amber variable. */
+  .busy .dot {
+    background: #e0a100;
+  }
+  .detail {
+    margin: 0.2rem 0 0;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .detail:empty {
+    margin: 0;
+  }
+  .tabs {
+    display: flex;
+    margin-top: 0.4rem;
+  }
+  .tabs button {
+    flex: 1;
+    margin: 0;
+    padding: 0.5rem 0.25rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
     color: var(--pico-muted-color);
-    text-align: right;
+    font-weight: 500;
   }
-  .badge.ok {
-    color: var(--pico-ins-color);
+  .tabs button:hover {
+    color: var(--pico-color);
   }
-  nav button {
-    padding: 0.3rem 0.8rem;
+  .tabs button:focus:not(:focus-visible) {
+    box-shadow: none;
   }
-  .error {
-    color: var(--pico-del-color);
+  .tabs button[aria-current="page"] {
+    border-bottom-color: var(--pico-primary);
+    color: var(--pico-primary);
+    font-weight: 600;
+  }
+  main.wrap {
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
   }
 </style>

@@ -405,25 +405,11 @@
   input[type="number"] {
     min-width: 4.5rem;
   }
-  td button,
-  .compact {
+  td button {
     margin: 0;
     padding: 0.2rem 0.6rem;
   }
   .add div[role="group"] {
     margin-bottom: 0.25rem;
-  }
-  .muted {
-    color: var(--pico-muted-color);
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
-  .error {
-    color: var(--pico-del-color);
   }
 </style>

@@ -14,6 +14,7 @@
     type Settings,
   } from "./ipc";
   import { normalizeExe } from "./exe";
+  import { hotkeyFrom, modifiers, showHotkey } from "./hotkey";
 
   // Mirror src-tauri/src/settings.rs.
   const MAX_RULES = 50;
@@ -28,9 +29,11 @@
     "conhost.exe",
     "bash.exe",
     "wsl.exe",
+    "explorer.exe", // Win+R or the address bar plus Enter runs commands
   ];
   const TERMINAL_WARNING =
-    "Terminal: a code plus Enter runs as a command (e.g. logoff). Anyone who can text you could trigger it.";
+    "Command shell: a code plus Enter runs as a command (e.g. logoff). Anyone who can text you could trigger it.";
+  const DETECT_DELAY_S = 5; // mirror pipeline.rs DETECT_APP_DELAY
   const FLASH_MS = 2000;
 
   type FieldError = { id: string; label: string; message: string };
@@ -157,7 +160,7 @@
         showFlash();
         if (warning) {
           if (settings.hotkey === snap.hotkey) settings.hotkey = savedHotkey;
-          hotkeyWarning = warning;
+          hotkeyWarning = showHotkey(warning);
           lastSaved = JSON.stringify({ ...snap, hotkey: savedHotkey });
         } else {
           savedHotkey = snap.hotkey;
@@ -209,6 +212,7 @@
       return;
     }
     addError = "";
+    detectLive = "";
     addHint = `${verb} ${result.exe} — press Add to allow it`;
     addButton?.focus();
   }
@@ -217,18 +221,18 @@
     addError = "";
     addHint = "";
     detectLive = "Switch to the app now";
-    detecting = 5;
+    detecting = DETECT_DELAY_S;
     const timer = setInterval(() => (detecting = Math.max(1, detecting - 1)), 1000);
     let failed = false;
     try {
       offer(await detectApp(), "Detected");
     } catch (e) {
       addError = errorText(e);
+      detectLive = addError; // the button's description changes silently while it has no focus
       failed = true;
     } finally {
       clearInterval(timer);
       detecting = 0;
-      detectLive = "";
     }
     if (failed) {
       await tick(); // the button is disabled until this render
@@ -252,26 +256,8 @@
     (buttons[i] ?? buttons[i - 1] ?? addInput)?.focus();
   }
 
-  // Hotkey recorder. Names follow the global-shortcut parser; "Super" is shown as "Win".
+  // Hotkey recorder.
   const MODIFIER_KEYS = ["Control", "Alt", "AltGraph", "Shift", "Meta", "OS"];
-  const showHotkey = (hotkey: string) => hotkey.replace(/\bSuper\b/g, "Win") || "Off";
-
-  function modifiers(e: KeyboardEvent): string[] {
-    const m: string[] = [];
-    if (e.ctrlKey) m.push("Ctrl");
-    if (e.altKey) m.push("Alt");
-    if (e.shiftKey) m.push("Shift");
-    if (e.metaKey) m.push("Super");
-    return m;
-  }
-
-  // keyCode, not key/code: it names the key by its layout label (Swiss Z is "Z") like Windows does.
-  function mainKey(keyCode: number): string | null {
-    if ((keyCode >= 0x41 && keyCode <= 0x5a) || (keyCode >= 0x30 && keyCode <= 0x39))
-      return String.fromCharCode(keyCode);
-    if (keyCode >= 0x70 && keyCode <= 0x87) return `F${keyCode - 0x6f}`;
-    return null;
-  }
 
   function stopRecording() {
     recording = false;
@@ -305,14 +291,12 @@
       return;
     }
     preview = "";
-    const key = mainKey(e.keyCode);
-    if (!key) recordError = "Use a letter, digit or F1–F24.";
-    else if (mods.length < 2) recordError = "Add at least two of Ctrl, Alt, Shift, Win";
-    else if (mods.join("+") === "Ctrl+Alt") recordError = "Ctrl+Alt is AltGr on many keyboards — add Shift or Win";
+    const result = hotkeyFrom(e);
+    if ("error" in result) recordError = result.error;
     else {
       stopRecording();
       recordError = "";
-      settings.hotkey = [...mods, key].join("+");
+      settings.hotkey = result.hotkey;
       save();
     }
   }
@@ -458,9 +442,15 @@
           type="button"
           class="compact outline secondary"
           disabled={detecting > 0}
+          aria-describedby="new-exe-msg"
           onclick={(e) => detect(e.currentTarget)}>Detect app…</button
         >
-        <button type="button" class="compact outline secondary" onclick={() => fileInput?.click()}>Browse…</button>
+        <button
+          type="button"
+          class="compact outline secondary"
+          aria-describedby="new-exe-msg"
+          onclick={() => fileInput?.click()}>Browse…</button
+        >
         {#if detecting}<span class="countdown" aria-hidden="true">Switch to the app — reading it in {detecting} s</span>{/if}
       </div>
       <input

@@ -89,7 +89,8 @@ non-admin app, not just allowlisted ones, because you asked for it explicitly. O
 The app keeps one streaming HTTPS connection to ntfy.sh open. If it drops (Wi-Fi change, sleep/resume, ntfy restart)
 it reconnects with backoff (1 s doubling up to 60 s) and asks ntfy for messages since shortly before the last one it
 saw, so nothing sent during a short outage is lost; repeats are filtered by the replay check. The badge in the window
-and the tray tooltip show **Connected**, **Connecting** or **Reconnecting in N s: reason**.
+shows **Connected**, **Connecting** or **Reconnecting** (with "Retrying in N s: reason" below it), and the tray
+tooltip shows the same state ("reconnecting in N s").
 
 ### Finding an app's exe name for the allowlist
 

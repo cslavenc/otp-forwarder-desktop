@@ -803,6 +803,10 @@ mod tests {
     fn hotkey_strings_are_parsed_by_the_plugin_parser() {
         assert!(parse_hotkey(DEFAULT_HOTKEY).unwrap().is_some());
         assert!(parse_hotkey("").unwrap().is_none());
+        // Shapes the UI recorder (src/lib/hotkey.ts) produces.
+        for good in ["Ctrl+Alt+Shift+Super+F24", "Shift+Super+0", "Ctrl+Shift+A"] {
+            assert!(parse_hotkey(good).unwrap().is_some(), "{good}");
+        }
         for bad in ["Ctrl+Alt+", "O+Ctrl", "Ctrl+Nope", "Ctrl+A+B"] {
             assert!(parse_hotkey(bad).is_err(), "{bad}");
         }

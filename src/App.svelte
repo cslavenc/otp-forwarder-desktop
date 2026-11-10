@@ -122,6 +122,7 @@
   .scroll {
     flex: 1;
     overflow-y: auto;
+    scroll-padding-top: 4rem; /* keeps focused controls clear of the sticky Settings save status */
   }
   .bar {
     display: flex;

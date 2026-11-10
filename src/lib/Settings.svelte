@@ -48,7 +48,9 @@
   let addError = $state("");
   let addInput = $state<HTMLInputElement>();
   let ruleList = $state<HTMLElement>();
-  let hotkeyInput = $state<HTMLInputElement>();
+  let recording = $state(false);
+  let preview = $state("");
+  let recordError = $state("");
   // Rules whose "Typing delay" details are open; opened for a blocked save, only the user closes them.
   const openRules = new SvelteSet<Rule>();
 
@@ -147,9 +149,7 @@
         saveError = "";
         showFlash();
         if (warning) {
-          // Not while typing: a blur flush would wipe a half-typed hotkey.
-          if (settings.hotkey === snap.hotkey && document.activeElement !== hotkeyInput)
-            settings.hotkey = savedHotkey;
+          if (settings.hotkey === snap.hotkey) settings.hotkey = savedHotkey;
           hotkeyWarning = warning;
           lastSaved = JSON.stringify({ ...snap, hotkey: savedHotkey });
         } else {
@@ -198,6 +198,78 @@
     await tick();
     const buttons = ruleList?.querySelectorAll<HTMLButtonElement>("button.remove") ?? [];
     (buttons[i] ?? buttons[i - 1] ?? addInput)?.focus();
+  }
+
+  // Hotkey recorder. Names follow the global-shortcut parser; "Super" is shown as "Win".
+  const MODIFIER_KEYS = ["Control", "Alt", "AltGraph", "Shift", "Meta", "OS"];
+  const showHotkey = (hotkey: string) => hotkey.replace(/\bSuper\b/g, "Win") || "Off";
+
+  function modifiers(e: KeyboardEvent): string[] {
+    const m: string[] = [];
+    if (e.ctrlKey) m.push("Ctrl");
+    if (e.altKey) m.push("Alt");
+    if (e.shiftKey) m.push("Shift");
+    if (e.metaKey) m.push("Super");
+    return m;
+  }
+
+  // keyCode, not key/code: it names the key by its layout label (Swiss Z is "Z") like Windows does.
+  function mainKey(keyCode: number): string | null {
+    if ((keyCode >= 0x41 && keyCode <= 0x5a) || (keyCode >= 0x30 && keyCode <= 0x39))
+      return String.fromCharCode(keyCode);
+    if (keyCode >= 0x70 && keyCode <= 0x87) return `F${keyCode - 0x6f}`;
+    return null;
+  }
+
+  function stopRecording() {
+    recording = false;
+    preview = "";
+  }
+
+  function toggleRecording() {
+    if (recording) return stopRecording();
+    recording = true;
+    recordError = "";
+  }
+
+  // shortcut: pressing the currently registered hotkey while recording triggers it (Windows
+  // consumes it before the webview sees it) instead of being recorded.
+  function recordKey(e: KeyboardEvent) {
+    if (!recording || !settings) return;
+    if (e.key === "Tab") return; // focus moves on; blur cancels
+    e.preventDefault();
+    if (e.repeat) return;
+    const mods = modifiers(e);
+    if (e.key === "Escape") return stopRecording();
+    if ((e.key === "Backspace" || e.key === "Delete") && mods.length === 0) {
+      stopRecording();
+      recordError = "";
+      settings.hotkey = "";
+      save();
+      return;
+    }
+    if (MODIFIER_KEYS.includes(e.key)) {
+      preview = showHotkey([...mods, "…"].join("+"));
+      return;
+    }
+    preview = "";
+    const key = mainKey(e.keyCode);
+    if (!key) recordError = "Use a letter, digit or F1–F24.";
+    else if (mods.length < 2) recordError = "Add at least two of Ctrl, Alt, Shift, Win";
+    else if (mods.join("+") === "Ctrl+Alt") recordError = "Ctrl+Alt is AltGr on many keyboards — add Shift or Win";
+    else {
+      stopRecording();
+      recordError = "";
+      settings.hotkey = [...mods, key].join("+");
+      save();
+    }
+  }
+
+  function recordKeyUp(e: KeyboardEvent) {
+    if (!recording || e.key === "Tab") return;
+    e.preventDefault(); // Space would otherwise click the button
+    const mods = modifiers(e);
+    preview = mods.length ? showHotkey([...mods, "…"].join("+")) : "";
   }
 
   async function toggleAutostart(box: HTMLInputElement) {
@@ -377,19 +449,27 @@
   <section aria-labelledby="sec-hotkey">
     <h2 id="sec-hotkey">Hotkey</h2>
     <p class="help muted">Types the last code into the focused app.</p>
-    <label>
-      Hotkey (empty = off)
-      <input
-        bind:this={hotkeyInput}
-        bind:value={settings.hotkey}
-        onblur={save}
-        onchange={save}
-        placeholder="Ctrl+Alt+Shift+O"
-        aria-invalid={hotkeyWarning ? true : undefined}
-        aria-describedby={hotkeyWarning ? "hotkey-msg" : undefined}
-      />
-      {#if hotkeyWarning}<small id="hotkey-msg" class="error">{hotkeyWarning}</small>{/if}
-    </label>
+    <div class="hotkey">
+      <span id="hotkey-label">Shortcut</span>
+      <button
+        type="button"
+        class="outline secondary"
+        class:recording
+        aria-labelledby="hotkey-label hotkey-value"
+        aria-describedby="hotkey-msg hotkey-help"
+        aria-pressed={recording}
+        onclick={toggleRecording}
+        onkeydown={recordKey}
+        onkeyup={recordKeyUp}
+        onblur={stopRecording}
+      >
+        <span id="hotkey-value"
+          >{recording ? preview || "Press the new keys… (Esc to cancel)" : showHotkey(settings.hotkey)}</span
+        >
+      </button>
+    </div>
+    <small id="hotkey-msg" class="error" aria-live="polite">{recordError || hotkeyWarning}</small>
+    <small id="hotkey-help" class="muted">Click, then press the keys, e.g. Ctrl+Shift+K. Backspace = off.</small>
   </section>
 {/if}
 
@@ -493,5 +573,29 @@
   }
   .howto p {
     font-size: 0.875rem;
+  }
+  .hotkey {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.35rem;
+  }
+  .hotkey button {
+    min-width: 12rem;
+    margin: 0;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .hotkey button.recording {
+    border-style: dashed;
+    border-color: var(--pico-primary);
+    color: var(--pico-primary);
+    font-weight: normal;
+  }
+  #hotkey-msg,
+  #hotkey-help {
+    display: block;
+    line-height: 1.4;
   }
 </style>

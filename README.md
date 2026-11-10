@@ -94,7 +94,8 @@ and the tray tooltip show **Connected**, **Connecting** or **Reconnecting in N s
 ### Finding an app's exe name for the allowlist
 
 Open the app, then **Task Manager → Details**, and find the row that uses CPU when you interact with it; the
-*Name* column is what goes into **Settings**. For Citrix, the session window is usually `wfica32.exe`
+*Name* column is what goes into **Settings**. You can type the name with or without `.exe` (`notepad` works), or paste
+the full path of the exe. For Citrix, the session window is usually `wfica32.exe`
 (`CDViewer.exe` for some desktop viewers) and the Workspace login window is `SelfService.exe`. For a browser it would be
 `chrome.exe`, `msedge.exe`, etc. Note that allowlisting a browser means codes are typed into *any* focused page.
 
@@ -116,7 +117,7 @@ Open the app, then **Task Manager → Details**, and find the row that uses CPU 
    `release\OTP Forwarder_0.1.0_x64-setup.exe`.
 2. Start **OTP Forwarder**. On first start it creates a pairing and opens the **Pairing** tab.
 3. Click **Show QR code** and scan it with the Android app. The badge in the top-right should say **Connected**.
-4. Optional: in **Settings**, enable *Start with Windows*, adjust the allowlist, and click **Save**.
+4. Optional: in **Settings**, enable *Start with Windows* and adjust the allowlist; changes are saved automatically.
 
 ### Getting the app onto your phone
 

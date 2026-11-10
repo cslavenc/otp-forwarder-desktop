@@ -93,11 +93,15 @@ and the tray tooltip show **Connected**, **Connecting** or **Reconnecting in N s
 
 ### Finding an app's exe name for the allowlist
 
-Open the app, then **Task Manager → Details**, and find the row that uses CPU when you interact with it; the
-*Name* column is what goes into **Settings**. You can type the name with or without `.exe` (`notepad` works), or paste
-the full path of the exe. For Citrix, the session window is usually `wfica32.exe`
-(`CDViewer.exe` for some desktop viewers) and the Workspace login window is `SelfService.exe`. For a browser it would be
-`chrome.exe`, `msedge.exe`, etc. Note that allowlisting a browser means codes are typed into *any* focused page.
+The easiest way: in **Settings**, click **Detect app…** and switch to the app within 5 seconds; its name lands in the
+*Add an app* field and you confirm with **Add**. This reports the process that really owns the window (for Citrix the
+session window is usually `wfica32.exe`, `CDViewer.exe` for some desktop viewers, and the Workspace login window is
+`SelfService.exe`). Store apps all report `ApplicationFrameHost.exe`, so allowlisting it covers *every* Store app.
+
+Alternatively, **Browse…** to the app's `.exe` (not a shortcut), or open **Task Manager → Details** and find the row
+that uses CPU when you interact with it; the *Name* column is the name. You can type the name with or without `.exe`
+(`notepad` works), or paste the full path of the exe. For a browser it would be `chrome.exe`, `msedge.exe`, etc. Note
+that allowlisting a browser means codes are typed into *any* focused page.
 
 ## Features
 
@@ -106,7 +110,8 @@ the full path of the exe. For Citrix, the session window is usually `wfica32.exe
 - Auto-type into allowlisted apps (default: `wfica32.exe`, `CDViewer.exe`, `SelfService.exe`) via `SendInput`,
   keyboard-layout aware; clipboard + toast fallback everywhere else
 - Per-app rules: press Enter after typing, delay between keystrokes
-- Global hotkey **Ctrl+Alt+Shift+O** types the latest code into the focused app
+- Global hotkey (default **Ctrl+Alt+Shift+O**) types the latest code into the focused app; change it in **Settings** by
+  clicking the shortcut and pressing the new keys (at least two modifiers), or Backspace to turn it off
 - Recent codes (masked, in memory only, gone after 5 minutes); clipboard auto-clear, also on exit
 - Tray icon with relay status; closing the window hides it; optional start with Windows
 - Windows 10 and Windows 11
@@ -140,7 +145,8 @@ again.
 You can test the whole path (relay → decryption → typing) without the Android app.
 
 **From the app (no tools needed):** open **Codes → Send test code**, then within 5 seconds click into the target field
-(e.g. a Citrix login prompt, or Notepad if you temporarily add `notepad.exe` to the allowlist). The app publishes an
+(e.g. a Citrix login prompt, or Notepad: add it temporarily via **Settings → Detect app…** while Notepad is in front).
+The app publishes an
 encrypted random code to its own relay topic and delivers it like a real one.
 
 **From the command line** (needs the Rust toolchain; reads the pairing from Credential Manager):
@@ -165,6 +171,10 @@ Other flags: `--sender "+41…"`. A pairing file is the QR JSON: `{"v":1,"relay"
 - [ ] Code with an allowlisted app focused → typed in, toast "Typed code into <exe>"; with *Press Enter* also submits.
 - [ ] Stale, duplicate and wrong-key messages are rejected with a notice in the Codes tab.
 - [ ] **Ctrl+Alt+Shift+O** types the latest code into the focused app.
+- [ ] Add an app in **Settings**, use tray **Quit**, start again → the app is still listed.
+- [ ] While another program holds the hotkey (and notifications are off), Settings still shows a hotkey warning; once
+      it is released, changing any setting makes the hotkey work.
+- [ ] **Detect app…** with Notepad, a Citrix session, an admin `cmd` (refused) and OTP Forwarder itself (refused).
 - [ ] Reveal shows the code and re-masks after 10 s; Copy copies it; codes vanish after 5 minutes.
 - [ ] Closing the window hides it to the tray; tray **Quit** exits and clears a pending clipboard code.
 - [ ] Starting the app a second time only brings the first window to the front.

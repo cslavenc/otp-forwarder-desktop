@@ -63,9 +63,15 @@ pub fn repair(app: AppHandle) -> Result<(), String> {
     pipeline::repair(&app)
 }
 
+/// Fails while the settings file is unreadable, so the UI never shows defaults as if they were
+/// the user's settings.
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> Settings {
-    state.lock().settings.clone()
+pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
+    let inner = state.lock();
+    match &inner.settings_error {
+        Some(error) => Err(error.clone()),
+        None => Ok(inner.settings.clone()),
+    }
 }
 
 /// Validates, swaps the hotkey, then saves; nothing changes on error. A hotkey that cannot be
@@ -80,8 +86,8 @@ pub fn set_settings(
 ) -> Result<Option<String>, String> {
     settings.validate().map_err(|e| e.to_string())?;
     let mut inner = state.lock();
-    if !inner.settings_writable {
-        return Err("settings file unreadable; restart the app".into());
+    if let Some(error) = &inner.settings_error {
+        return Err(error.clone());
     }
     let old = inner.settings.hotkey.clone();
     // An invalid stored hotkey was never registered.

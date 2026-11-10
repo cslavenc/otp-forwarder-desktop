@@ -63,8 +63,8 @@ pub struct AppState {
 pub(crate) struct Inner {
     pub(crate) pairing: PairingState,
     pub(crate) settings: Settings,
-    /// False when the settings file exists but could not be read: saving would overwrite it.
-    pub(crate) settings_writable: bool,
+    /// Set when the settings file exists but could not be read: saving would overwrite it.
+    pub(crate) settings_error: Option<String>,
     /// `None` until a relay was started (i.e. while unpaired).
     pub(crate) relay: Option<RelayStatus>,
     pub(crate) recent: RecentCodes,
@@ -81,7 +81,7 @@ impl AppState {
         relay_tx: mpsc::Sender<RelayEvent>,
         pairing: PairingState,
         settings: Settings,
-        settings_writable: bool,
+        settings_error: Option<String>,
     ) -> Self {
         Self {
             platform,
@@ -91,7 +91,7 @@ impl AppState {
             inner: Mutex::new(Inner {
                 pairing,
                 settings,
-                settings_writable,
+                settings_error,
                 relay: None,
                 recent: RecentCodes::default(),
                 dedupe: Dedupe::default(),

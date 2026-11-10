@@ -82,11 +82,14 @@ pub fn run() {
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let settings_path = app.path().app_config_dir()?.join(SETTINGS_FILE);
-    let (settings, settings_writable) = match Settings::load(&settings_path) {
-        Ok(settings) => (settings, true),
+    let (settings, settings_error) = match Settings::load(&settings_path) {
+        Ok(settings) => (settings, None),
         Err(e) => {
             pipeline::debug_log(&format!("settings unreadable, using defaults: {e}"));
-            (Settings::default(), false)
+            let error = format!(
+                "Settings could not be read; changes won't be saved until you restart: {e}"
+            );
+            (Settings::default(), Some(error))
         }
     };
     let hotkey = settings.hotkey.clone();
@@ -107,8 +110,11 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         relay_tx,
         pairing,
         settings,
-        settings_writable,
+        settings_error.clone(),
     ));
+    if let Some(error) = &settings_error {
+        pipeline::toast(app, notify, error);
+    }
     // Tray first, so the relay's first status reaches its tooltip.
     build_tray(app)?;
     tauri::async_runtime::spawn(pipeline::run(app.clone(), relay_rx));

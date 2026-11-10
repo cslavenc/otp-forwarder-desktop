@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import {
     errorText,
     getAutostart,
@@ -8,6 +9,7 @@
     setAutostart,
     setSettings,
     subscribe,
+    type Rule,
     type Settings,
   } from "./ipc";
   import { normalizeExe } from "./exe";
@@ -45,8 +47,10 @@
   let newExe = $state("");
   let addError = $state("");
   let addInput = $state<HTMLInputElement>();
-  let rulesBody = $state<HTMLElement>();
+  let ruleList = $state<HTMLElement>();
   let hotkeyInput = $state<HTMLInputElement>();
+  // Rules whose "Typing delay" details are open; opened for a blocked save, only the user closes them.
+  const openRules = new SvelteSet<Rule>();
 
   let lastSaved = "";
   let savedHotkey = "";
@@ -69,6 +73,7 @@
     return errors;
   });
   const fieldError = (id: string) => fieldErrors.find((e) => e.id === id)?.message;
+  const clipboardError = $derived(fieldError("clipboard-clear"));
 
   const status = $derived(
     fieldErrors.length > 0 ? `Not saved: fix ${fieldErrors[0].label}` : busy ? "Saving…" : flash,
@@ -122,7 +127,10 @@
     try {
       do {
         again = false;
-        if (fieldErrors.length > 0) break;
+        if (fieldErrors.length > 0) {
+          settings.rules.forEach((r, i) => fieldError(`delay-${i}`) && openRules.add(r));
+          break;
+        }
         const snap = $state.snapshot(settings);
         const json = JSON.stringify(snap);
         if (json === lastSaved) {
@@ -188,7 +196,7 @@
     notice = `Removed ${rule.exe}`;
     save();
     await tick();
-    const buttons = rulesBody?.querySelectorAll<HTMLButtonElement>("button.remove") ?? [];
+    const buttons = ruleList?.querySelectorAll<HTMLButtonElement>("button.remove") ?? [];
     (buttons[i] ?? buttons[i - 1] ?? addInput)?.focus();
   }
 
@@ -217,78 +225,79 @@
       </p>
     {/if}
   </div>
-{/if}
 
-<label>
-  <input type="checkbox" role="switch" checked={autostart} onchange={(e) => toggleAutostart(e.currentTarget)} />
-  Start with Windows
-</label>
-{#if autostartError}<p class="error" role="alert">{autostartError}</p>{/if}
-
-{#if settings}
-  <label>
-    <input
-      type="checkbox"
-      role="switch"
-      bind:checked={
-        () => settings!.auto_type,
-        (v) => {
-          settings!.auto_type = v;
-          save();
+  <section aria-labelledby="sec-autotype">
+    <h2 id="sec-autotype">Auto-type</h2>
+    <p class="help muted">Codes are typed into these apps when they have focus. Any other app gets the code on the clipboard.</p>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        bind:checked={
+          () => settings!.auto_type,
+          (v) => {
+            settings!.auto_type = v;
+            save();
+          }
         }
-      }
-    />
-    Auto-type codes into these apps
-  </label>
+      />
+      Auto-type codes into the apps below
+    </label>
+    {#if !settings.auto_type}
+      <p class="help muted">Auto-type is off: every code goes to the clipboard. You can still edit the list.</p>
+    {/if}
 
-  <table>
-    <thead>
-      <tr>
-        <th scope="col">App (.exe)</th>
-        <th scope="col">On</th>
-        <th scope="col">Enter</th>
-        <th scope="col">Delay ms</th>
-        <th scope="col"><span class="visually-hidden">Remove</span></th>
-      </tr>
-    </thead>
-    <tbody bind:this={rulesBody}>
+    <ul class="cards" aria-label="Apps that receive typed codes" bind:this={ruleList}>
       {#each settings.rules as rule, i (rule)}
         {@const delayError = fieldError(`delay-${i}`)}
         {@const terminal = rule.press_enter && isShell(rule.exe)}
-        <tr>
-          <td class="exe">{rule.exe}</td>
-          <td>
-            <input
-              type="checkbox"
-              aria-label="Auto-type into {rule.exe}"
-              bind:checked={
-                () => rule.enabled,
-                (v) => {
-                  rule.enabled = v;
-                  save();
+        <li>
+          <div class="head">
+            <strong class="exe">{rule.exe}</strong>
+            <button type="button" class="outline secondary compact remove" aria-label="Remove {rule.exe}" onclick={() => remove(i)}
+              >✕</button
+            >
+          </div>
+          <div class="opts">
+            <label>
+              <input
+                type="checkbox"
+                role="switch"
+                bind:checked={
+                  () => rule.enabled,
+                  (v) => {
+                    rule.enabled = v;
+                    save();
+                  }
                 }
-              }
-            />
-          </td>
-          <td>
-            <input
-              type="checkbox"
-              aria-label="Press Enter after typing into {rule.exe}"
-              aria-describedby={terminal ? `terminal-${i}` : undefined}
-              bind:checked={
-                () => rule.press_enter,
-                (v) => {
-                  rule.press_enter = v;
-                  save();
+              />
+              Auto-type<span class="visually-hidden"> into {rule.exe}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                aria-describedby={terminal ? `terminal-${i}` : undefined}
+                bind:checked={
+                  () => rule.press_enter,
+                  (v) => {
+                    rule.press_enter = v;
+                    save();
+                  }
                 }
-              }
-            />
-          </td>
-          <td>
+              />
+              Press Enter after typing<span class="visually-hidden"> into {rule.exe}</span>
+            </label>
+          </div>
+          {#if terminal}<p class="warn"><small id="terminal-{i}" class="error">{TERMINAL_WARNING}</small></p>{/if}
+          <details
+            open={openRules.has(rule)}
+            ontoggle={(e) => (e.currentTarget.open ? openRules.add(rule) : openRules.delete(rule))}
+          >
+            <summary>Typing delay: {rule.delay_ms} ms</summary>
+            <label for="delay-{i}">Pause between keystrokes, 0–{MAX_DELAY_MS} ms<span class="visually-hidden"> for {rule.exe}</span></label>
             <input
               id="delay-{i}"
               type="number"
-              aria-label="Delay between keystrokes into {rule.exe}, in ms"
               aria-invalid={delayError ? true : undefined}
               aria-describedby={delayError ? `delay-${i}-msg` : undefined}
               bind:value={rule.delay_ms}
@@ -298,46 +307,48 @@
               step="1"
             />
             {#if delayError}<small id="delay-{i}-msg" class="error">{delayError}</small>{/if}
-          </td>
-          <td>
-            <button type="button" class="outline secondary remove" aria-label="Remove {rule.exe}" onclick={() => remove(i)}
-              >×</button
-            >
-          </td>
-        </tr>
-        {#if terminal}
-          <tr><td colspan="5"><small id="terminal-{i}" class="error">{TERMINAL_WARNING}</small></td></tr>
-        {/if}
+          </details>
+        </li>
       {/each}
-    </tbody>
-  </table>
+    </ul>
 
-  <form class="add" onsubmit={add}>
-    <label for="new-exe">Add an app (name or path of its .exe)</label>
-    <div role="group">
-      <input
-        id="new-exe"
-        bind:this={addInput}
-        bind:value={newExe}
-        oninput={() => (addError = "")}
-        placeholder="notepad"
-        aria-invalid={addError ? true : undefined}
-        aria-describedby="new-exe-msg"
-      />
-      <button type="submit">Add</button>
-    </div>
-    <small id="new-exe-msg" class:error={addError || ("exe" in candidate && isShell(candidate.exe))}>
-      {#if addError}{addError}{:else if "exe" in candidate && isShell(candidate.exe)}{TERMINAL_WARNING}{/if}
-    </small>
-  </form>
-  <p><small>Enable "Enter" only for apps you trust: anyone who can text your phone can trigger it.</small></p>
+    <form class="add" onsubmit={add}>
+      <label for="new-exe">Add an app (name or path of its .exe)</label>
+      <div role="group">
+        <input
+          id="new-exe"
+          bind:this={addInput}
+          bind:value={newExe}
+          oninput={() => (addError = "")}
+          placeholder="notepad"
+          aria-invalid={addError ? true : undefined}
+          aria-describedby="new-exe-msg"
+        />
+        <button type="submit">Add</button>
+      </div>
+      <small id="new-exe-msg" class:error={addError || ("exe" in candidate && isShell(candidate.exe))}>
+        {#if addError}{addError}{:else if "exe" in candidate && isShell(candidate.exe)}{TERMINAL_WARNING}{/if}
+      </small>
+    </form>
+    <p class="help muted">Use "Press Enter" only for apps you trust: anyone who can text your phone can trigger it.</p>
+    <details class="howto">
+      <summary>How do I find an app's name?</summary>
+      <p>
+        Open Task Manager, go to <strong>Details</strong>, and look for the app; the <strong>Name</strong> column shows
+        its file name, e.g. <code>notepad.exe</code>. Citrix sessions run in <code>wfica32.exe</code> or
+        <code>CDViewer.exe</code>.
+      </p>
+    </details>
+  </section>
 
-  {@const clipboardError = fieldError("clipboard-clear")}
-  <label>
-    Clear clipboard after (seconds, 0 = never)
+  <section aria-labelledby="sec-clipboard">
+    <h2 id="sec-clipboard">Clipboard &amp; notifications</h2>
+    <p class="help muted">Used when a code can't be typed.</p>
+    <label for="clipboard-clear">Clear the clipboard after (seconds, 0 = never)</label>
     <input
       id="clipboard-clear"
       type="number"
+      class="narrow"
       aria-invalid={clipboardError ? true : undefined}
       aria-describedby={clipboardError ? "clipboard-clear-msg" : undefined}
       bind:value={settings.clipboard_clear_secs}
@@ -347,69 +358,140 @@
       step="1"
     />
     {#if clipboardError}<small id="clipboard-clear-msg" class="error">{clipboardError}</small>{/if}
-  </label>
-  <label>
-    <input
-      type="checkbox"
-      role="switch"
-      bind:checked={
-        () => settings!.notifications,
-        (v) => {
-          settings!.notifications = v;
-          save();
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        bind:checked={
+          () => settings!.notifications,
+          (v) => {
+            settings!.notifications = v;
+            save();
+          }
         }
-      }
-    />
-    Show notifications
-  </label>
-  <label>
-    Hotkey to type the last code (empty = off)
-    <input
-      bind:this={hotkeyInput}
-      bind:value={settings.hotkey}
-      onblur={save}
-      onchange={save}
-      placeholder="Ctrl+Alt+Shift+O"
-      aria-invalid={hotkeyWarning ? true : undefined}
-      aria-describedby={hotkeyWarning ? "hotkey-msg" : undefined}
-    />
-    {#if hotkeyWarning}<small id="hotkey-msg" class="error">{hotkeyWarning}</small>{/if}
-  </label>
+      />
+      Show notifications
+    </label>
+  </section>
+
+  <section aria-labelledby="sec-hotkey">
+    <h2 id="sec-hotkey">Hotkey</h2>
+    <p class="help muted">Types the last code into the focused app.</p>
+    <label>
+      Hotkey (empty = off)
+      <input
+        bind:this={hotkeyInput}
+        bind:value={settings.hotkey}
+        onblur={save}
+        onchange={save}
+        placeholder="Ctrl+Alt+Shift+O"
+        aria-invalid={hotkeyWarning ? true : undefined}
+        aria-describedby={hotkeyWarning ? "hotkey-msg" : undefined}
+      />
+      {#if hotkeyWarning}<small id="hotkey-msg" class="error">{hotkeyWarning}</small>{/if}
+    </label>
+  </section>
 {/if}
+
+<section aria-labelledby="sec-startup">
+  <h2 id="sec-startup">Startup</h2>
+  <label>
+    <input type="checkbox" role="switch" checked={autostart} onchange={(e) => toggleAutostart(e.currentTarget)} />
+    Start with Windows
+  </label>
+  {#if autostartError}<p class="error" role="alert">{autostartError}</p>{/if}
+</section>
 
 <style>
   .status {
     position: sticky;
     top: 0;
     z-index: 1;
+    margin: -0.25rem 0 1rem;
+    padding-top: 0.25rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
     background: var(--pico-background-color);
   }
   .status p {
     margin: 0 0 0.5rem;
   }
-  table {
-    font-size: 0.85rem;
+  section {
+    margin-bottom: 1.75rem;
   }
-  th,
-  td {
-    padding: 0.25rem;
+  h2 {
+    margin-bottom: 0.15rem;
+    font-size: 1.05rem;
   }
-  td.exe {
-    word-break: break-all;
+  .help {
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
   }
-  td input:not([type="checkbox"]) {
-    margin: 0;
-    padding: 0.25rem 0.4rem;
-    height: auto;
+  .cards {
+    margin: 0.5rem 0 1rem;
+    padding: 0;
   }
-  input[type="number"] {
-    min-width: 4.5rem;
+  .cards li {
+    list-style: none;
+    margin-bottom: 0.6rem;
+    padding: 0.6rem 0.85rem 0.15rem;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-card-background-color);
   }
-  td button {
-    margin: 0;
-    padding: 0.2rem 0.6rem;
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .exe {
+    overflow-wrap: anywhere;
+  }
+  .remove {
+    line-height: 1;
+  }
+  .opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+  }
+  .opts label {
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+  }
+  .warn {
+    margin: 0 0 0.4rem;
+    line-height: 1.35;
+  }
+  .cards details {
+    margin-bottom: 0.4rem;
+    padding: 0;
+    border: 0;
+  }
+  .cards summary {
+    color: var(--pico-muted-color);
+    font-size: 0.875rem;
+  }
+  .cards details label {
+    margin-top: 0.4rem;
+    font-size: 0.875rem;
+  }
+  .cards details input,
+  .narrow {
+    max-width: 8rem;
+  }
+  .cards details input {
+    margin-bottom: 0.25rem;
   }
   .add div[role="group"] {
     margin-bottom: 0.25rem;
+  }
+  .howto {
+    margin-bottom: 0;
+  }
+  .howto p {
+    font-size: 0.875rem;
   }
 </style>

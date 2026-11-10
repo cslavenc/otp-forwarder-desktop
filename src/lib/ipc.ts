@@ -79,6 +79,8 @@ export const listRecent = () => invoke<RecentView[]>("list_recent");
 export const revealCode = (id: string) => invoke<string>("reveal_code", { id });
 export const copyCode = (id: string) => invoke<void>("copy_code", { id });
 export const sendTestCode = () => invoke<void>("send_test_code");
+/** Waits 5 s, then resolves to the foreground app's exe name (rejects with a reason). */
+export const detectApp = () => invoke<string>("detect_app");
 
 const on = <T>(event: string, handler: (payload: T) => void) =>
   listen<T>(event, (e) => handler(e.payload));

@@ -158,3 +158,11 @@ pub async fn copy_code(app: AppHandle, id: String) -> Result<(), String> {
 pub async fn send_test_code(app: AppHandle) -> Result<(), String> {
     pipeline::send_test_code(&app).await
 }
+
+/// Waits 5 s, returns the foreground app's exe name and shows the window again (without focus).
+#[tauri::command]
+pub async fn detect_app(app: AppHandle) -> Result<String, String> {
+    let detected = pipeline::detect_app(&app).await;
+    crate::unhide_main_window(&app);
+    detected
+}

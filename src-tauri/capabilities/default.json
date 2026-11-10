@@ -17,6 +17,7 @@
     "allow-list-recent",
     "allow-reveal-code",
     "allow-copy-code",
-    "allow-send-test-code"
+    "allow-send-test-code",
+    "allow-detect-app"
   ]
 }

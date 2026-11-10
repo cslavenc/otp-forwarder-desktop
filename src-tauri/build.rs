@@ -22,6 +22,7 @@ fn main() {
             "reveal_code",
             "copy_code",
             "send_test_code",
+            "detect_app",
         ]));
     if let Err(error) = tauri_build::try_build(attributes) {
         panic!("tauri-build failed: {error:#}");

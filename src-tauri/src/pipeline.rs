@@ -20,12 +20,14 @@ use crate::pairing::{DEFAULT_RELAY, Pairing};
 use crate::platform::{Foreground, Platform};
 use crate::relay::{self, RelayEvent, RelayStatus};
 use crate::rules::{self, Action};
-use crate::settings::{DEFAULT_DELAY_MS, Settings};
+use crate::settings::{self, DEFAULT_DELAY_MS, Settings};
 
 pub const RECENT_TTL_MS: i64 = 5 * 60_000;
 const MAX_RECENT: usize = 20;
 /// Gives the user time to focus the target field after clicking "Send test code".
 const TEST_CODE_DELAY: Duration = Duration::from_secs(5);
+/// Time to switch to the app whose exe name "Detect app" reads.
+const DETECT_APP_DELAY: Duration = Duration::from_secs(5);
 const TEST_SENDER: &str = "Test";
 pub const TRAY_ID: &str = "main";
 const APP_NAME: &str = "OTP Forwarder";
@@ -547,6 +549,37 @@ pub async fn send_test_code(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Waits [`DETECT_APP_DELAY`] for the user to switch apps, then returns the foreground exe name.
+pub async fn detect_app(app: &AppHandle) -> Result<String, String> {
+    sleep(DETECT_APP_DELAY).await;
+    detected_app(app.state::<AppState>().platform.foreground())
+}
+
+/// Only names the allowlist accepts and that auto-type could reach.
+fn detected_app(foreground: Option<Foreground>) -> Result<String, String> {
+    let Some(fg) = foreground else {
+        return Err("No app had focus".into());
+    };
+    if fg.own {
+        return Err(
+            "OTP Forwarder still had focus — switch to the app before the countdown ends".into(),
+        );
+    }
+    if fg.exe.is_empty() {
+        return Err("Couldn't read the app's name (it may run as administrator)".into());
+    }
+    if fg.elevated {
+        return Err(format!(
+            "{} runs as administrator; Windows blocks typing into it",
+            fg.exe
+        ));
+    }
+    if !settings::is_bare_exe_name(&fg.exe) {
+        return Err(format!("{} can't be allowlisted", fg.exe));
+    }
+    Ok(fg.exe)
+}
+
 /// `""` → no hotkey.
 pub fn parse_hotkey(hotkey: &str) -> Result<Option<Shortcut>, String> {
     if hotkey.is_empty() {
@@ -634,6 +667,33 @@ mod tests {
 
     fn action_of(decision: Result<(Foreground, Action), String>) -> Action {
         decision.unwrap().1
+    }
+
+    #[test]
+    fn detected_app_reports_usable_names_only() {
+        assert_eq!(detected_app(None).unwrap_err(), "No app had focus");
+        assert!(
+            detected_app(fg("otp-forwarder-desktop.exe", true, false))
+                .unwrap_err()
+                .starts_with("OTP Forwarder still had focus")
+        );
+        assert!(
+            detected_app(fg("", false, false))
+                .unwrap_err()
+                .starts_with("Couldn't read")
+        );
+        assert_eq!(
+            detected_app(fg("cmd.exe", false, true)).unwrap_err(),
+            "cmd.exe runs as administrator; Windows blocks typing into it"
+        );
+        assert_eq!(
+            detected_app(fg("java", false, false)).unwrap_err(),
+            "java can't be allowlisted"
+        );
+        assert_eq!(
+            detected_app(fg("Notepad.exe", false, false)).unwrap(),
+            "Notepad.exe"
+        );
     }
 
     #[test]

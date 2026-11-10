@@ -157,7 +157,7 @@ impl Settings {
     }
 }
 
-fn is_bare_exe_name(exe: &str) -> bool {
+pub(crate) fn is_bare_exe_name(exe: &str) -> bool {
     let chars = exe.chars().count();
     chars > ".exe".len()
         && chars <= MAX_EXE_CHARS

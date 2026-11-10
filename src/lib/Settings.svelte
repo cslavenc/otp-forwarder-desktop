@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import {
+    detectApp,
     errorText,
     getAutostart,
     getSettings,
@@ -47,6 +48,11 @@
   let newExe = $state("");
   let addError = $state("");
   let addInput = $state<HTMLInputElement>();
+  let addButton = $state<HTMLButtonElement>();
+  let fileInput = $state<HTMLInputElement>();
+  let detecting = $state(0); // seconds left, 0 = idle
+  let detectLive = $state("");
+  let addHint = $state("");
   let ruleList = $state<HTMLElement>();
   let recording = $state(false);
   let preview = $state("");
@@ -82,6 +88,7 @@
   );
 
   const candidate = $derived(normalizeExe(newExe));
+  const shellCandidate = $derived("exe" in candidate && isShell(candidate.exe));
 
   function load() {
     return Promise.all([
@@ -178,6 +185,7 @@
       settings.rules.push({ exe: result.exe, enabled: true, press_enter: false, delay_ms: 15 });
       newExe = "";
       addError = "";
+      addHint = "";
       notice = `Added ${result.exe}`;
       save();
     }
@@ -188,6 +196,50 @@
     await save();
     // The Retry button disappears on success; don't leave focus on nothing.
     if (!saveError) addInput?.focus();
+  }
+
+  /** Puts a detected or picked name into the add row; the user still confirms with Add. */
+  function offer(raw: string, verb: string) {
+    const result = normalizeExe(raw);
+    newExe = "exe" in result ? result.exe : raw;
+    if ("error" in result) {
+      addError = result.error;
+      addHint = "";
+      addInput?.focus();
+      return;
+    }
+    addError = "";
+    addHint = `${verb} ${result.exe} — press Add to allow it`;
+    addButton?.focus();
+  }
+
+  async function detect(button: HTMLButtonElement) {
+    addError = "";
+    addHint = "";
+    detectLive = "Switch to the app now";
+    detecting = 5;
+    const timer = setInterval(() => (detecting = Math.max(1, detecting - 1)), 1000);
+    let failed = false;
+    try {
+      offer(await detectApp(), "Detected");
+    } catch (e) {
+      addError = errorText(e);
+      failed = true;
+    } finally {
+      clearInterval(timer);
+      detecting = 0;
+      detectLive = "";
+    }
+    if (failed) {
+      await tick(); // the button is disabled until this render
+      button.focus();
+    }
+  }
+
+  function picked(input: HTMLInputElement) {
+    const file = input.files?.[0];
+    input.value = ""; // picking the same file again fires change again
+    if (file) offer(file.name, "Picked");
   }
 
   async function remove(i: number) {
@@ -391,23 +443,44 @@
           id="new-exe"
           bind:this={addInput}
           bind:value={newExe}
-          oninput={() => (addError = "")}
+          oninput={() => ((addError = ""), (addHint = ""))}
           placeholder="notepad"
           aria-invalid={addError ? true : undefined}
           aria-describedby="new-exe-msg"
         />
-        <button type="submit">Add</button>
+        <button type="submit" bind:this={addButton} aria-describedby="new-exe-msg">Add</button>
       </div>
-      <small id="new-exe-msg" class:error={addError || ("exe" in candidate && isShell(candidate.exe))}>
-        {#if addError}{addError}{:else if "exe" in candidate && isShell(candidate.exe)}{TERMINAL_WARNING}{/if}
+      <small id="new-exe-msg" class:error={addError || shellCandidate}>
+        {#if addError}{addError}{:else}{addHint}{#if addHint && shellCandidate}{" "}{/if}{#if shellCandidate}{TERMINAL_WARNING}{/if}{/if}
       </small>
+      <div class="pick">
+        <button
+          type="button"
+          class="compact outline secondary"
+          disabled={detecting > 0}
+          onclick={(e) => detect(e.currentTarget)}>Detect app…</button
+        >
+        <button type="button" class="compact outline secondary" onclick={() => fileInput?.click()}>Browse…</button>
+        {#if detecting}<span class="countdown" aria-hidden="true">Switch to the app — reading it in {detecting} s</span>{/if}
+      </div>
+      <input
+        type="file"
+        accept=".exe"
+        tabindex="-1"
+        aria-hidden="true"
+        class="visually-hidden"
+        bind:this={fileInput}
+        onchange={(e) => picked(e.currentTarget)}
+      />
+      <p class="visually-hidden" role="status">{detectLive}</p>
     </form>
     <p class="help muted">Use "Press Enter" only for apps you trust: anyone who can text your phone can trigger it.</p>
     <details class="howto">
       <summary>How do I find an app's name?</summary>
       <p>
-        Open Task Manager, go to <strong>Details</strong>, and look for the app; the <strong>Name</strong> column shows
-        its file name, e.g. <code>notepad.exe</code>. Citrix sessions run in <code>wfica32.exe</code> or
+        Click <strong>Detect app…</strong>, then switch to the app within 5 seconds. Or use <strong>Browse…</strong> to
+        pick its <code>.exe</code>, or open Task Manager → <strong>Details</strong>: the <strong>Name</strong> column
+        shows it, e.g. <code>notepad.exe</code>. Citrix sessions run in <code>wfica32.exe</code> or
         <code>CDViewer.exe</code>.
       </p>
     </details>
@@ -567,6 +640,21 @@
   }
   .add div[role="group"] {
     margin-bottom: 0.25rem;
+  }
+  #new-exe-msg {
+    display: block;
+    line-height: 1.4;
+  }
+  .pick {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+  }
+  .countdown {
+    font-size: 0.875rem;
+    font-weight: 600;
   }
   .howto {
     margin-bottom: 0;

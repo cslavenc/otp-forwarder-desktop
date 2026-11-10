@@ -61,6 +61,7 @@ pub fn run() {
             commands::reveal_code,
             commands::copy_code,
             commands::send_test_code,
+            commands::detect_app,
         ])
         .setup(|app| setup(app.handle()))
         .on_window_event(|window, event| {
@@ -181,10 +182,17 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn show_main_window(app: &AppHandle) {
+    unhide_main_window(app);
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.set_focus();
+    }
+}
+
+/// Shows the window without stealing focus from the app the user just switched to.
+pub(crate) fn unhide_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.unminimize();
         let _ = window.show();
-        let _ = window.set_focus();
     }
 }
 

@@ -71,7 +71,7 @@
   <header>
     <div class="wrap">
       <div class="bar">
-        <strong>OTP Forwarder</strong>
+        <h1>OTP Forwarder</h1>
         <span class="pill {badge.tone}" role="status"><span class="dot" aria-hidden="true"></span>{badge.label}</span>
       </div>
       <p class="detail" role="status">{#if badge.detail}<small class="muted">{badge.detail}</small>{/if}</p>
@@ -92,9 +92,11 @@
     <main class="wrap">
       {#if error}<p class="error" role="alert">{error}</p>{/if}
 
-      <section id="panel-recent" aria-label="Codes" hidden={tab !== "recent"}><Recent /></section>
+      <section id="panel-recent" aria-label="Codes" hidden={tab !== "recent"}>
+        <Recent {status} ongo={(t) => (tab = t)} />
+      </section>
       <section id="panel-pairing" aria-label="Pairing" hidden={tab !== "pairing"}>
-        <Pairing active={tab === "pairing"} onrepaired={refresh} />
+        <Pairing active={tab === "pairing"} {status} onrepaired={refresh} ongo={(t) => (tab = t)} />
       </section>
       <section id="panel-settings" aria-label="Settings" hidden={tab !== "settings"}><Settings /></section>
     </main>
@@ -126,6 +128,10 @@
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1rem;
   }
   .pill {
     display: inline-flex;
